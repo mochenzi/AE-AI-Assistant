@@ -17,4 +17,18 @@ describe('atomic JSON store', () => {
     expect(JSON.parse(await readFile(path, 'utf8'))).toEqual({ count: 1 });
     await expect(readFile(`${path}.tmp`, 'utf8')).rejects.toThrow();
   });
+
+  test('serializes overlapping writes so the last requested state wins', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-'));
+    const path = join(directory, 'state.json');
+    const store = new AtomicJsonStore(path, { count: 0 });
+
+    await Promise.all([
+      store.write({ count: 1 }),
+      store.write({ count: 2 }),
+      store.write({ count: 3 }),
+    ]);
+
+    expect(await store.read()).toEqual({ count: 3 });
+  });
 });

@@ -1,11 +1,12 @@
-import { createDefaultState, type AppState } from '../shared/appState';
+import { createDefaultState, type AppState, type Conversation } from '../shared/appState';
 import type { AeActionPlan } from '../shared/actionProtocol';
-import type { ApiProfile, ChatMessage } from '../shared/types';
+import type { ApiProfile, ChatMessage, ContextProfile } from '../shared/types';
 
 declare global {
   interface Window {
     __adobe_cep__?: { evalScript(script: string, callback: (result: string) => void): void; getSystemPath(name: string): string };
     cep_node?: { require(id: string): any };
+    cep?: { fs?: { showOpenDialog(allowMultipleSelection: boolean, chooseDirectory: boolean, title: string, initialPath?: string, fileTypes?: string[]): { err: number; data?: string[] } } };
   }
 }
 
@@ -48,6 +49,7 @@ export interface RuntimeBridge {
   submitVideo(profile: ApiProfile, prompt: string, ratio: string, duration: number): Promise<string>;
   pollVideo(profile: ApiProfile, taskId: string): Promise<{ state: 'polling' | 'ready' | 'failed'; url?: string; error?: string }>;
   download(url: string, outputDirectory: string): Promise<string>;
+  archiveConversation(directory: string, conversation: Conversation, contexts: ContextProfile[]): Promise<string>;
 }
 
 class PreviewRuntime implements RuntimeBridge {
@@ -55,6 +57,7 @@ class PreviewRuntime implements RuntimeBridge {
   async getState() { const saved = localStorage.getItem('ae-ai-preview'); return saved ? JSON.parse(saved) : this.state; }
   async saveState(value: AppState) { this.state = value; localStorage.setItem('ae-ai-preview', JSON.stringify(value)); }
   async saveApiKey() { return; } async hasApiKey() { return false; } async removeApiKey() { return; }
+  async archiveConversation(): Promise<string> { throw new Error('开发预览模式不能写入外部归档目录'); }
   async testProfile() { return { ok: true, modelCount: 2 }; }
   async listModels() { return [{ id: 'preview-model', contextWindow: 128000 }]; }
   async getBalance() { return { amount: 88.8, currency: 'CNY' }; }
@@ -67,7 +70,19 @@ class PreviewRuntime implements RuntimeBridge {
 
 let runtime: RuntimeBridge | undefined;
 export function normalizeCepPath(value: string): string {
-  return decodeURIComponent(value).replace(/^file:\/\/\/?/i, '').replace(/^\/([A-Za-z]:[\\/])/, '$1');
+  const decoded = /^file:/i.test(value) ? decodeURIComponent(value) : value;
+  return decoded.replace(/^file:\/\/\/?/i, '').replace(/^\/([A-Za-z]:[\\/])/, '$1');
+}
+
+export function normalizeCepFolderSelection(result: { err: number; data?: string[] }): string | null {
+  if (result.err !== 0 || !result.data?.[0]) return null;
+  return normalizeCepPath(result.data[0]);
+}
+
+export function selectCepDirectory(title = '选择对话归档文件夹'): string | null {
+  const cepFs = window.cep?.fs;
+  if (!cepFs) return null;
+  return normalizeCepFolderSelection(cepFs.showOpenDialog(false, true, title, ''));
 }
 
 export function getRuntime(): RuntimeBridge {

@@ -1,8 +1,16 @@
 export type Capability = 'chat' | 'image' | 'video';
 export type StructuredOutputMode = 'json_schema' | 'json_object' | 'prompt_only';
+export type ProviderId = 'openai' | 'deepseek' | 'moonshot' | 'dashscope' | 'zhipu' | 'mimo' | 'volcengine' | 'custom';
+
+export interface CachedModel {
+  id: string;
+  contextWindow?: number;
+}
 
 export interface ApiProfile {
   id: string;
+  /** Missing only on legacy in-memory drafts; migrateState normalizes it to custom. */
+  providerId?: ProviderId;
   name: string;
   baseUrl: string;
   timeoutMs: number;
@@ -23,6 +31,9 @@ export interface ApiProfile {
   };
   models?: { endpoint: string; idPath: string; contextPath?: string; lastUpdated?: string };
   balance?: { method: 'GET' | 'POST'; endpoint: string; amountPath: string; currencyPath?: string; lastUpdated?: string };
+  /** Missing only on legacy profiles; migrateState normalizes it to an empty list. */
+  cachedModels?: CachedModel[];
+  modelsUpdatedAt?: string;
 }
 
 export type MediaTaskStatus = 'queued' | 'submitting' | 'polling' | 'downloading' | 'importing' | 'completed' | 'failed' | 'cancelled';

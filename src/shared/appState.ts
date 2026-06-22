@@ -1,4 +1,4 @@
-import type { ApiProfile, ChatMessage, ContextProfile, MediaTask, PromptTemplate } from './types';
+import type { ApiProfile, Capability, ChatMessage, ContextProfile, MediaTask, PromptTemplate } from './types';
 
 export interface Conversation {
   id: string;
@@ -7,6 +7,13 @@ export interface Conversation {
   contextProfileIds: string[];
   archived: boolean;
   createdAt: string;
+  archivePath?: string;
+  handoffSummary?: string;
+}
+
+export interface ActiveModelSelection {
+  profileId: string;
+  model: string;
 }
 
 export interface AppState {
@@ -17,6 +24,8 @@ export interface AppState {
   conversations: Conversation[];
   tasks: MediaTask[];
   tokenTotals: Record<string, { input: number; output: number }>;
+  activeSelections: Partial<Record<Capability, ActiveModelSelection>>;
+  archiveDirectory: string;
 }
 
 export function upsertById<T extends { id: string }>(items: T[], item: T): T[] {
@@ -27,7 +36,7 @@ export function upsertById<T extends { id: string }>(items: T[], item: T): T[] {
 
 export function createDefaultState(): AppState {
   return {
-    profiles: [], defaultProfiles: {}, contexts: [], conversations: [], tasks: [], tokenTotals: {},
+    profiles: [], defaultProfiles: {}, contexts: [], conversations: [], tasks: [], tokenTotals: {}, activeSelections: {}, archiveDirectory: '',
     templates: [
       { id: 'builtin-ae-title', title: '动态片头', category: 'AE 动画', target: 'ae', body: '在当前合成中创建标题“{{title}}”，时长 {{duration}} 秒，制作简洁的淡入和上移动画。', variables: ['title', 'duration'], builtin: true },
       { id: 'builtin-image-bg', title: '氛围背景', category: '图片素材', target: 'image', body: '生成 {{style}} 风格的 {{subject}} 背景，画面比例 {{ratio}}，无文字，适合作为视频背景。', variables: ['style', 'subject', 'ratio'], builtin: true },
