@@ -1,0 +1,6 @@
+.context-manager { display: flex; gap: 5px; flex-wrap: wrap; }
+.context-manager span { display: flex; }
+.context-manager span button { padding: 4px 6px; font-size: 9px; }
+.file-button { border: 1px dashed #4b5a51; padding: 4px 7px; font-size: 9px; color: var(--cyan); cursor: pointer; }
+.file-button input { display: none; }
+.task button { border: 1px solid #526158; background: #1c261f; color: var(--acid); padding: 5px 7px; font-size: 9px; }
