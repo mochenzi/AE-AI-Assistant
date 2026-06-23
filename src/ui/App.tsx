@@ -367,7 +367,9 @@ function ChatPage({
             estimated: false,
           };
       });
-      const response = parseAssistantResponse(text);
+      const response = parseAssistantResponse(text, {
+        allowAeActions: state.chatMode === "ae",
+      });
       setPlan(response.kind === "ae_action" ? response.plan : null);
       const nextConversation = {
         ...active,

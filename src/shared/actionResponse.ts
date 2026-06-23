@@ -11,7 +11,10 @@ function jsonCandidate(text: string): string {
   return fenced ?? (first >= 0 && last > first ? text.slice(first, last + 1) : '');
 }
 
-export function parseAssistantResponse(text: string): AssistantResponse {
+export function parseAssistantResponse(
+  text: string,
+  options: { allowAeActions: boolean } = { allowAeActions: false },
+): AssistantResponse {
   const raw = text.trim();
   let value: unknown;
   try {
@@ -29,6 +32,12 @@ export function parseAssistantResponse(text: string): AssistantResponse {
   }
 
   if (value && typeof value === 'object' && (value as { kind?: unknown }).kind === 'ae_action') {
+    if (!options.allowAeActions) {
+      return {
+        kind: 'chat',
+        visibleText: '当前为普通对话模式，已忽略 AI 返回的 AE 操作计划。',
+      };
+    }
     const result = validateActionPlan((value as { plan?: unknown }).plan);
     if (result.ok) {
       return {

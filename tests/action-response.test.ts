@@ -16,7 +16,10 @@ describe('assistant response parser', () => {
   });
 
   test('unwraps and validates an AE action plan', () => {
-    const result = parseAssistantResponse(`\`\`\`json\n${JSON.stringify({ kind: 'ae_action', plan: validPlan })}\n\`\`\``);
+    const result = parseAssistantResponse(
+      `\`\`\`json\n${JSON.stringify({ kind: 'ae_action', plan: validPlan })}\n\`\`\``,
+      { allowAeActions: true },
+    );
     expect(result.kind).toBe('ae_action');
     expect(result.visibleText).toBe('已生成 AE 动作预览：读取当前工程');
     if (result.kind === 'ae_action') expect(result.plan.summary).toBe('读取当前工程');
@@ -29,7 +32,7 @@ describe('assistant response parser', () => {
 
   test('does not expose an invalid action as executable', () => {
     const raw = JSON.stringify({ kind: 'ae_action', plan: { ...validPlan, version: 'ae-actions/v2' } });
-    const result = parseAssistantResponse(raw);
+    const result = parseAssistantResponse(raw, { allowAeActions: true });
     expect(result.kind).toBe('chat');
     expect(result.visibleText).toBe('AI 返回的 AE 动作计划无效，未生成可执行操作。');
   });
@@ -37,5 +40,13 @@ describe('assistant response parser', () => {
   test('does not display an unknown JSON envelope', () => {
     const result = parseAssistantResponse('{"action":"project.context"}');
     expect(result).toEqual({ kind: 'chat', visibleText: 'AI 返回格式无法识别，请重试。' });
+  });
+
+  test('refuses a valid AE action envelope in normal chat mode', () => {
+    const raw = JSON.stringify({ kind: 'ae_action', plan: validPlan });
+    expect(parseAssistantResponse(raw, { allowAeActions: false })).toEqual({
+      kind: 'chat',
+      visibleText: '当前为普通对话模式，已忽略 AI 返回的 AE 操作计划。',
+    });
   });
 });
