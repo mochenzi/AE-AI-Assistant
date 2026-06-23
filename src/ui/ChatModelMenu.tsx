@@ -38,11 +38,11 @@ export function ChatModelMenu({
   const [open, setOpen] = useState(false);
   const choices = useMemo(() => collectChatModelChoices(profiles), [profiles]);
   const groups = useMemo(() => {
-    const result = new Map<string, ChatModelChoice[]>();
+    const result = new Map<string, { profileName: string; items: ChatModelChoice[] }>();
     for (const choice of choices) {
-      const current = result.get(choice.profileName) ?? [];
-      current.push(choice);
-      result.set(choice.profileName, current);
+      const current = result.get(choice.profileId) ?? { profileName: choice.profileName, items: [] };
+      current.items.push(choice);
+      result.set(choice.profileId, current);
     }
     return result;
   }, [choices]);
@@ -55,20 +55,20 @@ export function ChatModelMenu({
       <button
         type="button"
         className="composer-control model-control"
-        aria-label="閫夋嫨鑱婂ぉ妯″瀷"
+        aria-label="选择聊天模型"
         aria-expanded={open}
         disabled={choices.length === 0}
         onClick={() => setOpen((value) => !value)}
       >
-        <span>{selected?.model || selection.model || '閫夋嫨妯″瀷'}</span>
+        <span>{selected?.model || selection.model || '选择模型'}</span>
         <ChevronDown size={12} />
       </button>
       {open && (
         <div className="composer-popover model-popover" role="menu">
-          {[...groups].map(([profileName, items]) => (
-            <section key={profileName} className="chat-model-group">
-              <small>{profileName}</small>
-              {items.map((choice) => {
+          {[...groups].map(([profileId, group]) => (
+            <section key={profileId} className="chat-model-group">
+              <small>{group.profileName}</small>
+              {group.items.map((choice) => {
                 const active = choice.profileId === selection.profileId && choice.model === selection.model;
                 return (
                   <button
