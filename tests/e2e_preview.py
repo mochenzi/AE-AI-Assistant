@@ -7,7 +7,7 @@ with sync_playwright() as p:
     page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
     page.goto("http://127.0.0.1:5173")
     page.wait_for_load_state("networkidle")
-    assert page.get_by_text("准备操作 AE").is_visible()
+    assert page.get_by_text("开始普通对话").is_visible()
     for label, expected in [("生成", "生成静帧素材"), ("模板", "把重复描述变成工具"), ("API", "已保存档案"), ("历史", "输入 Tokens")]:
         page.get_by_role("button", name=label, exact=True).click()
         assert page.get_by_text(expected, exact=True).is_visible()

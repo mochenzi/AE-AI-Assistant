@@ -10,6 +10,21 @@ with sync_playwright() as p:
     assert page.locator(".model-switcher").is_visible()
     assert page.locator(".context-compact").is_visible()
 
+    expect(page.get_by_text("普通对话", exact=True)).to_be_visible()
+    page.get_by_role("button", name="选择对话模式", exact=True).click()
+    page.get_by_role("menuitemradio", name="操作 AE", exact=True).click()
+    expect(page.locator(".chat-mode-chip.ae")).to_have_text("操作 AE")
+    expect(page.get_by_text("所有 AE 动作都会先生成预览", exact=False)).to_be_visible()
+
+    page.get_by_role("button", name="生成", exact=True).click()
+    page.get_by_role("button", name="对话", exact=True).click()
+    expect(page.locator(".chat-mode-chip.ae")).to_have_text("操作 AE")
+
+    page.wait_for_timeout(400)
+    page.reload()
+    page.wait_for_load_state("networkidle")
+    expect(page.locator(".chat-mode-chip.ae")).to_have_text("操作 AE")
+
     send = page.locator("button.send")
     send.evaluate("el => el.removeAttribute('disabled')")
     box = send.bounding_box()
