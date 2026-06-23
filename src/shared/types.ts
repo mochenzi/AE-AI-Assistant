@@ -5,6 +5,7 @@ export type ProviderId = 'openai' | 'deepseek' | 'moonshot' | 'dashscope' | 'zhi
 export interface CachedModel {
   id: string;
   contextWindow?: number;
+  declaredContextWindow?: number;
 }
 
 export interface ApiProfile {

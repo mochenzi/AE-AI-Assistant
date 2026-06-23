@@ -54,9 +54,12 @@ import {
   listProviderPresets,
 } from "../shared/providers";
 import {
+  effectiveContextWindow,
+  ONE_MILLION_TOKENS,
   profilesForCapability,
   resolveSelection,
   setActiveSelection,
+  setDeclaredContextWindow,
   withSelectedModel,
 } from "../shared/modelSelection";
 import {
@@ -69,6 +72,7 @@ import {
   compactArchivedConversation,
   persistArchiveTransition,
 } from "../shared/conversationArchive";
+import { ModelPicker } from "./ModelPicker";
 
 type Tab = "chat" | "media" | "templates" | "api" | "history";
 const tabs: Array<{ id: Tab; label: string; icon: typeof Bot }> = [
@@ -258,20 +262,12 @@ function CapabilityModelSwitcher({
           </option>
         ))}
       </select>
-      <input
-        aria-label="模型"
-        list={`${capability}-model-options`}
+      <ModelPicker
+        ariaLabel="模型"
+        models={models}
         value={selection.model}
-        onChange={(event) => selectModel(event.target.value)}
-        placeholder="输入或选择模型"
+        onChange={selectModel}
       />
-      <datalist id={`${capability}-model-options`}>
-        {models.map((model) => (
-          <option value={model.id} key={model.id}>
-            {model.contextWindow || ""}
-          </option>
-        ))}
-      </datalist>
     </div>
   );
 }
@@ -319,7 +315,7 @@ function ChatPage({
     ({ id }) => id === chatSelection.model,
   );
   const contextLimit =
-    selectedModelMeta?.contextWindow || profile?.chat?.contextWindow;
+    effectiveContextWindow(selectedModelMeta) || profile?.chat?.contextWindow;
   const budget = contextStatus(estimated, contextLimit);
 
   async function send() {
@@ -2171,28 +2167,47 @@ function ApiPage({
                 ))}
               </div>
             </fieldset>
-            <div className="form-grid">
+            <div className="form-grid model-config-grid">
               {draft.capabilities.map((capability) => (
-                <label key={capability}>
-                  {capability} 模型
-                  <input
-                    list="profile-model-options"
-                    value={draft[capability]?.model || ""}
-                    onChange={(e) =>
-                      updateCapabilityModel(capability, e.target.value)
-                    }
-                    placeholder="同步后选择或手动输入"
-                  />
-                </label>
+                <div className="model-config" key={capability}>
+                  <label>
+                    {capability} 模型
+                    <ModelPicker
+                      ariaLabel={`${capability} 模型`}
+                      models={draft.cachedModels || []}
+                      value={draft[capability]?.model || ""}
+                      onChange={(model) =>
+                        updateCapabilityModel(capability, model)
+                      }
+                    />
+                  </label>
+                  {capability === "chat" && (
+                    <label className="context-declaration">
+                      <input
+                        type="checkbox"
+                        aria-label="声明支持 1M"
+                        disabled={!draft.chat?.model}
+                        checked={
+                          draft.cachedModels?.find(
+                            ({ id }) => id === draft.chat?.model,
+                          )?.declaredContextWindow === ONE_MILLION_TOKENS
+                        }
+                        onChange={(event) =>
+                          setDraft(
+                            setDeclaredContextWindow(
+                              draft,
+                              draft.chat?.model || "",
+                              event.target.checked,
+                            ),
+                          )
+                        }
+                      />
+                      声明支持 1M
+                    </label>
+                  )}
+                </div>
               ))}
             </div>
-            <datalist id="profile-model-options">
-              {(draft.cachedModels || []).map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.contextWindow || ""}
-                </option>
-              ))}
-            </datalist>
             <AdvancedProfileFields
               draft={draft}
               setDraft={setDraft}

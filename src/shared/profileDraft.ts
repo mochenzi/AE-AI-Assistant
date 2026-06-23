@@ -35,6 +35,11 @@ export function cacheProfileModels(
   updatedAt = new Date().toISOString(),
 ): ApiProfile {
   const seen = new Set<string>();
+  const declarations = new Map(
+    (profile.cachedModels || [])
+      .filter(({ declaredContextWindow }) => Number.isFinite(declaredContextWindow) && (declaredContextWindow ?? 0) > 0)
+      .map(({ id, declaredContextWindow }) => [id, declaredContextWindow] as const),
+  );
   const cachedModels = models.flatMap(({ id, contextWindow }) => {
     const normalizedId = id.trim();
     if (!normalizedId || seen.has(normalizedId)) return [];
@@ -42,6 +47,7 @@ export function cacheProfileModels(
     return [{
       id: normalizedId,
       ...(Number.isFinite(contextWindow) && (contextWindow ?? 0) > 0 ? { contextWindow } : {}),
+      ...(declarations.has(normalizedId) ? { declaredContextWindow: declarations.get(normalizedId) } : {}),
     }];
   });
 

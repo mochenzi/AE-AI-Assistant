@@ -1,5 +1,26 @@
 import type { ActiveModelSelection, AppState } from './appState';
-import type { ApiProfile, Capability } from './types';
+import type { ApiProfile, CachedModel, Capability } from './types';
+
+export const ONE_MILLION_TOKENS = 1_000_000;
+
+export function effectiveContextWindow(model?: CachedModel): number | undefined {
+  return model?.declaredContextWindow ?? model?.contextWindow;
+}
+
+export function setDeclaredContextWindow(profile: ApiProfile, modelId: string, enabled: boolean): ApiProfile {
+  const normalizedId = modelId.trim();
+  if (!normalizedId) return { ...profile };
+  const cachedModels = [...(profile.cachedModels || [])];
+  const index = cachedModels.findIndex(({ id }) => id === normalizedId);
+  const current = index >= 0 ? cachedModels[index] : { id: normalizedId };
+  const { declaredContextWindow: _discarded, ...withoutDeclaration } = current;
+  const next = enabled
+    ? { ...withoutDeclaration, declaredContextWindow: ONE_MILLION_TOKENS }
+    : withoutDeclaration;
+  if (index >= 0) cachedModels[index] = next;
+  else cachedModels.push(next);
+  return { ...profile, cachedModels };
+}
 
 export interface ResolvedSelection {
   profile?: ApiProfile;

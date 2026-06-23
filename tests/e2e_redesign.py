@@ -29,7 +29,17 @@ with sync_playwright() as p:
     page.get_by_text("OpenAI", exact=True).click()
     page.get_by_text("高级端点与字段映射", exact=True).click()
     assert page.get_by_label("额外 Headers (JSON)", exact=True).input_value().strip() == "{}"
+    page.get_by_role("button", name="获取模型", exact=True).click()
+    expect(page.get_by_text("已同步 1 个模型。", exact=True)).to_be_visible()
+    chat_model = page.get_by_label("chat 模型", exact=True)
+    expect(chat_model).to_have_js_property("tagName", "SELECT")
+    chat_model.select_option("preview-model")
+    page.get_by_label("声明支持 1M", exact=True).check()
+    expect(page.get_by_label("声明支持 1M", exact=True)).to_be_checked()
+    assert page.locator("datalist").count() == 0
     page.get_by_role("button", name="保存档案", exact=True).click()
+    page.locator(".profile-list button").filter(has_text="OpenAI").click()
+    expect(page.get_by_label("声明支持 1M", exact=True)).to_be_checked()
     page.get_by_text("高级端点与字段映射", exact=True).click()
     page.get_by_label("额外 Headers (JSON)", exact=True).fill('{"X-Dirty":"discard-me"}')
     page.get_by_role("button", name="放弃修改", exact=True).click()
