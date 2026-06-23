@@ -26,6 +26,15 @@ export function collectChatModelChoices(profiles: ApiProfile[]): ChatModelChoice
   });
 }
 
+export function findCurrentChatModelChoice(
+  profiles: ApiProfile[],
+  selection: { profileId?: string; model: string },
+): ChatModelChoice | undefined {
+  return collectChatModelChoices(profiles).find(
+    ({ profileId, model }) => profileId === selection.profileId && model === selection.model,
+  );
+}
+
 export function ChatModelMenu({
   profiles,
   selection,
@@ -60,11 +69,11 @@ export function ChatModelMenu({
         disabled={choices.length === 0}
         onClick={() => setOpen((value) => !value)}
       >
-        <span>{selected?.model || selection.model || '选择模型'}</span>
+        <span>{selected?.model || '选择模型'}</span>
         <ChevronDown size={12} />
       </button>
       {open && (
-        <div className="composer-popover model-popover" role="menu">
+        <div className="composer-popover model-popover">
           {[...groups].map(([profileId, group]) => (
             <section key={profileId} className="chat-model-group">
               <small>{group.profileName}</small>
@@ -73,8 +82,7 @@ export function ChatModelMenu({
                 return (
                   <button
                     type="button"
-                    role="menuitemradio"
-                    aria-checked={active}
+                    aria-current={active ? 'true' : undefined}
                     key={`${choice.profileId}:${choice.model}`}
                     onClick={() => {
                       onChange({ profileId: choice.profileId, model: choice.model });

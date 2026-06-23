@@ -1,4 +1,4 @@
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 errors = []
 with sync_playwright() as p:
@@ -32,6 +32,12 @@ with sync_playwright() as p:
     page.get_by_role("button", name="保存档案", exact=True).click()
     assert page.get_by_text("测试供应商（已修改）", exact=True).count() == 2
     page.get_by_role("button", name="对话", exact=True).click()
+    model_trigger = page.get_by_role("button", name="选择聊天模型", exact=True)
+    expect(model_trigger).to_contain_text("选择模型")
+    expect(model_trigger).to_be_disabled()
+    page.locator(".codex-composer textarea").fill("你好")
+    expect(page.get_by_role("button", name="发送消息", exact=True)).to_be_disabled()
+    expect(page.locator(".composer-hint")).to_contain_text("API 页面保存聊天模型")
     page.screenshot(path="C:/tmp/ae-ai-preview.png", full_page=True)
     assert not errors, errors
     browser.close()

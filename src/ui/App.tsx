@@ -73,7 +73,11 @@ import {
   compactArchivedConversation,
   persistArchiveTransition,
 } from "../shared/conversationArchive";
-import { ChatModelMenu } from "./ChatModelMenu";
+import {
+  ChatModelMenu,
+  findCurrentChatModelChoice,
+} from "./ChatModelMenu";
+import { reconcileSelectedContextIds } from "./chatComposerState";
 import { ModelPicker } from "./ModelPicker";
 
 type Tab = "chat" | "media" | "templates" | "api" | "history";
@@ -300,10 +304,24 @@ function ChatPage({
   const [selectedContexts, setSelectedContexts] = useState<string[]>(
     state.contexts.map(({ id }) => id),
   );
-  const chatSelection = resolveSelection(state, "chat");
-  const profile = chatSelection.profile;
-  const requestProfile = profile
-    ? withSelectedModel(profile, "chat", chatSelection.model)
+  const selectedContextIds = reconcileSelectedContextIds(
+    selectedContexts,
+    state.contexts,
+  );
+  const resolvedChatSelection = resolveSelection(state, "chat");
+  const chatSelection = state.activeSelections.chat ?? {
+    profileId: resolvedChatSelection.profileId,
+    model: resolvedChatSelection.model,
+  };
+  const currentChatChoice = findCurrentChatModelChoice(state.profiles, {
+    profileId: chatSelection.profileId,
+    model: chatSelection.model,
+  });
+  const profile = currentChatChoice
+    ? state.profiles.find(({ id }) => id === currentChatChoice.profileId)
+    : undefined;
+  const requestProfile = profile && currentChatChoice
+    ? withSelectedModel(profile, "chat", currentChatChoice.model)
     : undefined;
   const conversation = state.conversations.find(({ archived }) => !archived);
   const hasMessages = Boolean(conversation?.messages.length);
@@ -312,7 +330,7 @@ function ChatPage({
       ? AE_OPERATION_SYSTEM_PROMPT
       : CHAT_SYSTEM_PROMPT;
   const injected = state.contexts.filter(({ id }) =>
-    selectedContexts.includes(id),
+    selectedContextIds.includes(id),
   );
   const estimated = estimateMessages([
     { role: "system", content: systemPrompt },
@@ -327,8 +345,14 @@ function ChatPage({
     effectiveContextWindow(selectedModelMeta) || profile?.chat?.contextWindow;
   const budget = contextStatus(estimated, contextLimit);
 
+  useEffect(() => {
+    setSelectedContexts((ids) =>
+      reconcileSelectedContextIds(ids, state.contexts),
+    );
+  }, [state.contexts]);
+
   async function send() {
-    if (!profile || !requestProfile || !chatSelection.model) {
+    if (!currentChatChoice || !profile || !requestProfile) {
       setNotice("请先选择聊天供应商和模型");
       return;
     }
@@ -341,7 +365,7 @@ function ChatPage({
       id: uid(),
       title: prompt.slice(0, 24),
       messages: [],
-      contextProfileIds: selectedContexts,
+      contextProfileIds: selectedContextIds,
       archived: false,
       createdAt: now(),
     };
@@ -379,7 +403,7 @@ function ChatPage({
       setPlan(response.kind === "ae_action" ? response.plan : null);
       const nextConversation = {
         ...active,
-        contextProfileIds: selectedContexts,
+        contextProfileIds: selectedContextIds,
         messages: [
           ...active.messages,
           { role: "user" as const, content: prompt },
@@ -492,7 +516,7 @@ function ChatPage({
         messages: [
           { role: "system", content: `上一会话交接摘要：\n${summary}` },
         ],
-        contextProfileIds: selectedContexts,
+        contextProfileIds: selectedContextIds,
         archived: false,
         createdAt: now(),
       };
@@ -600,7 +624,13 @@ function ChatPage({
           {contextEditor && (
             <div className="composer-context-editor">
               <ContextEditor state={state} update={update} />
-              <button type="button" onClick={() => setContextEditor(false)}>
+              <button
+                type="button"
+                onClick={() => {
+                  setContextEditor(false);
+                  setContextPickerOpen(false);
+                }}
+              >
                 完成
               </button>
             </div>
@@ -629,15 +659,15 @@ function ChatPage({
                   className="composer-icon-button"
                   aria-label="更多对话选项"
                   aria-expanded={plusMenuOpen}
-                  onClick={() => setPlusMenuOpen((open) => !open)}
+                  onClick={() => {
+                    if (plusMenuOpen) setContextPickerOpen(false);
+                    setPlusMenuOpen(!plusMenuOpen);
+                  }}
                 >
                   <Plus size={16} />
                 </button>
                 {plusMenuOpen && (
-                  <div
-                    className="composer-popover context-popover"
-                    role="menu"
-                  >
+                  <div className="composer-popover context-popover">
                     <button
                       type="button"
                       onClick={() => setContextPickerOpen((open) => !open)}
@@ -653,7 +683,7 @@ function ChatPage({
                           <label key={item.id}>
                             <input
                               type="checkbox"
-                              checked={selectedContexts.includes(item.id)}
+                              checked={selectedContextIds.includes(item.id)}
                               onChange={() =>
                                 setSelectedContexts((ids) =>
                                   ids.includes(item.id)
@@ -669,6 +699,7 @@ function ChatPage({
                           type="button"
                           onClick={() => {
                             setContextEditor(true);
+                            setContextPickerOpen(false);
                             setPlusMenuOpen(false);
                           }}
                         >
@@ -691,18 +722,14 @@ function ChatPage({
                   {state.chatMode === "ae" ? "操作 AE" : "普通对话"}
                 </button>
                 {modeMenuOpen && (
-                  <div
-                    className="composer-popover mode-popover"
-                    role="menu"
-                  >
+                  <div className="composer-popover mode-popover">
                     {([
                       ["chat", "普通对话"],
                       ["ae", "操作 AE"],
                     ] as const).map(([value, label]) => (
                       <button
                         type="button"
-                        role="menuitemradio"
-                        aria-checked={state.chatMode === value}
+                        aria-pressed={state.chatMode === value}
                         disabled={busy}
                         key={value}
                         onClick={() => {
@@ -737,9 +764,9 @@ function ChatPage({
                   }))
                 }
               />
-              {selectedContexts.length > 0 && (
+              {selectedContextIds.length > 0 && (
                 <span className="context-count">
-                  上下文 {selectedContexts.length}
+                  上下文 {selectedContextIds.length}
                 </span>
               )}
               <button
@@ -749,14 +776,14 @@ function ChatPage({
                   busy ||
                   !prompt.trim() ||
                   budget.level === "blocked" ||
-                  !profile
+                  !currentChatChoice
                 }
                 onClick={send}
               >
                 {busy ? <LoaderCircle className="spin" /> : <Send />}
               </button>
             </div>
-            {!profile && (
+            {!currentChatChoice && (
               <small className="composer-hint">
                 请先在 API 页面保存聊天模型
               </small>

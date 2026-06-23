@@ -2,7 +2,11 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { ChatModelMenu, collectChatModelChoices } from '../src/ui/ChatModelMenu';
+import {
+  ChatModelMenu,
+  collectChatModelChoices,
+  findCurrentChatModelChoice,
+} from '../src/ui/ChatModelMenu';
 import type { ApiProfile } from '../src/shared/types';
 
 function profile(id: string, name: string, configured: string, cached: string[]): ApiProfile {
@@ -36,6 +40,19 @@ describe('ChatModelMenu', () => {
     ]);
   });
 
+  test('only accepts a selection that is present in the current choices', () => {
+    const profiles = [profile('p1', 'DeepSeek', 'deepseek-chat', [])];
+    expect(findCurrentChatModelChoice(profiles, { profileId: 'p1', model: 'deepseek-chat' }))
+      .toMatchObject({ profileId: 'p1', model: 'deepseek-chat' });
+    expect(findCurrentChatModelChoice(profiles, { profileId: 'p1', model: 'removed-model' }))
+      .toBeUndefined();
+    expect(findCurrentChatModelChoice(profiles, { profileId: 'deleted-profile', model: 'deepseek-chat' }))
+      .toBeUndefined();
+    expect(findCurrentChatModelChoice([
+      profile('p2', 'Empty', '', []),
+    ], { profileId: 'p2', model: '' })).toBeUndefined();
+  });
+
   test('opens grouped choices and reports profile and model together', () => {
     const changes: Array<{ profileId: string; model: string }> = [];
     act(() => root.render(
@@ -48,8 +65,11 @@ describe('ChatModelMenu', () => {
 
     act(() => (container.querySelector('[aria-label="选择聊天模型"]') as HTMLButtonElement).click());
     expect(container.textContent).toContain('DeepSeek');
-    expect(container.querySelectorAll('[role="menuitemradio"]')).toHaveLength(2);
-    act(() => (container.querySelectorAll('[role="menuitemradio"]')[1] as HTMLButtonElement).click());
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+    expect(container.querySelector('[role="menuitemradio"]')).toBeNull();
+    const options = container.querySelectorAll('.chat-model-group button');
+    expect(options[0].getAttribute('aria-current')).toBe('true');
+    act(() => (options[1] as HTMLButtonElement).click());
     expect(changes).toEqual([{ profileId: 'p1', model: 'deepseek-reasoner' }]);
   });
 
@@ -68,7 +88,7 @@ describe('ChatModelMenu', () => {
 
     act(() => (container.querySelector('[aria-label="选择聊天模型"]') as HTMLButtonElement).click());
     expect(container.querySelectorAll('.chat-model-group')).toHaveLength(2);
-    act(() => (container.querySelectorAll('[role="menuitemradio"]')[1] as HTMLButtonElement).click());
+    act(() => (container.querySelectorAll('.chat-model-group button')[1] as HTMLButtonElement).click());
     expect(changes).toEqual([{ profileId: 'p2', model: 'model-two' }]);
   });
 
@@ -79,5 +99,19 @@ describe('ChatModelMenu', () => {
     const trigger = container.querySelector('[aria-label="选择聊天模型"]') as HTMLButtonElement;
     expect(trigger.textContent).toContain('选择模型');
     expect(trigger.disabled).toBe(true);
+  });
+
+  test('shows an enabled selection prompt instead of a stale model when choices exist', () => {
+    act(() => root.render(
+      <ChatModelMenu
+        profiles={[profile('p1', 'DeepSeek', 'current-model', [])]}
+        selection={{ profileId: 'p1', model: 'removed-model' }}
+        onChange={() => undefined}
+      />,
+    ));
+    const trigger = container.querySelector('[aria-label="选择聊天模型"]') as HTMLButtonElement;
+    expect(trigger.textContent).toContain('选择模型');
+    expect(trigger.textContent).not.toContain('removed-model');
+    expect(trigger.disabled).toBe(false);
   });
 });

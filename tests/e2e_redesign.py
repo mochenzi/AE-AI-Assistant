@@ -16,7 +16,7 @@ with sync_playwright() as p:
 
     expect(page.get_by_text("普通对话", exact=True)).to_be_visible()
     page.get_by_role("button", name="选择对话模式", exact=True).click()
-    page.get_by_role("menuitemradio", name="操作 AE", exact=True).click()
+    page.locator(".mode-popover button", has_text="操作 AE").click()
     expect(page.locator(".mode-control.ae")).to_have_text("操作 AE")
     expect(page.locator(".ae-project-status")).to_be_visible()
 
@@ -69,7 +69,7 @@ with sync_playwright() as p:
     page.get_by_role("button", name="对话", exact=True).click()
     page.get_by_role("button", name="选择聊天模型", exact=True).click()
     expect(page.get_by_text("OpenAI", exact=True)).to_be_visible()
-    page.get_by_role("menuitemradio", name="preview-model", exact=True).click()
+    page.locator(".model-popover button", has_text="preview-model").click()
     expect(page.get_by_role("button", name="选择聊天模型", exact=True)).to_contain_text("preview-model")
 
     page.get_by_role("button", name="更多对话选项", exact=True).click()
@@ -81,11 +81,16 @@ with sync_playwright() as p:
     page.get_by_role("button", name="完成", exact=True).click()
 
     page.get_by_role("button", name="更多对话选项", exact=True).click()
+    expect(page.get_by_text("项目背景", exact=True)).to_be_hidden()
+    page.get_by_role("button", name="上下文档案", exact=True).click()
     context_item = page.get_by_text("项目背景", exact=True)
-    if not context_item.is_visible():
-        page.get_by_role("button", name="上下文档案", exact=True).click()
     context_item.click()
     expect(page.locator(".context-count")).to_have_text("上下文 1")
+
+    page.get_by_role("button", name="管理上下文档案", exact=True).click()
+    page.get_by_title("删除").click()
+    expect(page.locator(".context-count")).to_have_count(0)
+    page.get_by_role("button", name="完成", exact=True).click()
 
     expect(page.locator(".context-warning")).to_have_count(0)
     page.locator(".codex-composer textarea").fill("请继续分析。" * 32000)
