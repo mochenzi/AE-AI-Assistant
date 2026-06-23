@@ -13,7 +13,7 @@ function jsonCandidate(text: string): string {
 
 export function parseAssistantResponse(
   text: string,
-  options: { allowAeActions: boolean } = { allowAeActions: false },
+  options: { allowAeActions: boolean; currentMode?: 'chat' | 'ae' } = { allowAeActions: false },
 ): AssistantResponse {
   const raw = text.trim();
   let value: unknown;
@@ -32,7 +32,7 @@ export function parseAssistantResponse(
   }
 
   if (value && typeof value === 'object' && (value as { kind?: unknown }).kind === 'ae_action') {
-    if (!options.allowAeActions) {
+    if (!options.allowAeActions || options.currentMode === 'chat') {
       return {
         kind: 'chat',
         visibleText: '当前为普通对话模式，已忽略 AI 返回的 AE 操作计划。',

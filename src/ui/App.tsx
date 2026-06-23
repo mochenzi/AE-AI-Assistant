@@ -335,6 +335,7 @@ function ChatPage({
     if (!prompt.trim() || budget.level === "blocked") return;
     setBusy(true);
     setPlan(null);
+    setModeMenuOpen(false);
     setNotice("正在请求模型…");
     const active: Conversation = conversation ?? {
       id: uid(),
@@ -373,6 +374,7 @@ function ChatPage({
       });
       const response = parseAssistantResponse(text, {
         allowAeActions: state.chatMode === "ae",
+        currentMode: latestState.current.chatMode,
       });
       setPlan(response.kind === "ae_action" ? response.plan : null);
       const nextConversation = {
@@ -683,6 +685,7 @@ function ChatPage({
                   className={`composer-control mode-control ${state.chatMode}`}
                   aria-label="选择对话模式"
                   aria-expanded={modeMenuOpen}
+                  disabled={busy}
                   onClick={() => setModeMenuOpen((open) => !open)}
                 >
                   {state.chatMode === "ae" ? "操作 AE" : "普通对话"}
@@ -700,6 +703,7 @@ function ChatPage({
                         type="button"
                         role="menuitemradio"
                         aria-checked={state.chatMode === value}
+                        disabled={busy}
                         key={value}
                         onClick={() => {
                           update((current) => ({

@@ -49,4 +49,15 @@ describe('assistant response parser', () => {
       visibleText: '当前为普通对话模式，已忽略 AI 返回的 AE 操作计划。',
     });
   });
+
+  test('refuses a late AE action when the current mode changed to normal chat', () => {
+    const raw = JSON.stringify({ kind: 'ae_action', plan: validPlan });
+    expect(parseAssistantResponse(raw, {
+      allowAeActions: true,
+      currentMode: 'chat',
+    })).toEqual({
+      kind: 'chat',
+      visibleText: '当前为普通对话模式，已忽略 AI 返回的 AE 操作计划。',
+    });
+  });
 });
