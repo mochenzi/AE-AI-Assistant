@@ -73,6 +73,7 @@ import {
   compactArchivedConversation,
   persistArchiveTransition,
 } from "../shared/conversationArchive";
+import { ChatModelMenu } from "./ChatModelMenu";
 import { ModelPicker } from "./ModelPicker";
 
 type Tab = "chat" | "media" | "templates" | "api" | "history";
@@ -293,16 +294,19 @@ function ChatPage({
   const [busy, setBusy] = useState(false);
   const [plan, setPlan] = useState<AeActionPlan | null>(null);
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
+  const [plusMenuOpen, setPlusMenuOpen] = useState(false);
+  const [contextPickerOpen, setContextPickerOpen] = useState(false);
+  const [contextEditor, setContextEditor] = useState(false);
   const [selectedContexts, setSelectedContexts] = useState<string[]>(
     state.contexts.map(({ id }) => id),
   );
-  const [contextEditor, setContextEditor] = useState(false);
   const chatSelection = resolveSelection(state, "chat");
   const profile = chatSelection.profile;
   const requestProfile = profile
     ? withSelectedModel(profile, "chat", chatSelection.model)
     : undefined;
   const conversation = state.conversations.find(({ archived }) => !archived);
+  const hasMessages = Boolean(conversation?.messages.length);
   const systemPrompt =
     state.chatMode === "ae"
       ? AE_OPERATION_SYSTEM_PROMPT
@@ -516,83 +520,21 @@ function ChatPage({
 
   return (
     <section className="page chat-layout">
-      <div className="context-bar context-compact">
-        <div>
-          <span>上下文</span>
-          <b>
-            {estimated.toLocaleString()} /{" "}
-            {contextLimit?.toLocaleString() || "未知"} tokens
-          </b>
-        </div>
-        <div className="meter">
-          <i style={{ width: `${budget.percent}%` }} className={budget.level} />
-        </div>
-        <em>{budget.percent || 0}%</em>
-        {budget.level === "warning" || budget.level === "blocked" ? (
-          <button disabled={busy} onClick={archiveWithSummary}>
-            {busy ? "归档中…" : "压缩并续聊"}
-          </button>
-        ) : null}
-      </div>
-      <div className="context-pills">
-        <button onClick={() => setContextEditor(!contextEditor)}>
-          <FileText size={14} /> 上下文档案
-        </button>
-        {state.contexts.map((item) => (
-          <label
-            key={item.id}
-            className={selectedContexts.includes(item.id) ? "selected" : ""}
-          >
-            <input
-              type="checkbox"
-              checked={selectedContexts.includes(item.id)}
-              onChange={() =>
-                setSelectedContexts((ids) =>
-                  ids.includes(item.id)
-                    ? ids.filter((id) => id !== item.id)
-                    : [...ids, item.id],
-                )
-              }
-            />
-            {item.name}
-          </label>
-        ))}
-      </div>
-      {contextEditor && <ContextEditor state={state} update={update} />}
-      <div className="conversation-frame">
-        <div className="conversation-toolbar">
-          <div>
-            <b>AI 对话工作区</b>
-            <small>
+      <div className="conversation-frame clean-chat">
+        <div className="conversation">
+          {state.chatMode === "ae" && (
+            <div className="ae-project-status">
               {project.activeComp
                 ? `${project.activeComp.name} · AE 已连接`
                 : "未选择活动合成"}
-            </small>
-          </div>
-          <CapabilityModelSwitcher
-            capability="chat"
-            state={state}
-            update={update}
-          />
-        </div>
-        <div className="conversation">
-          <div className="empty-mark">
-            <Bot size={24} />
-            <div>
-              <b>
-                {conversation
-                  ? conversation.title
-                  : state.chatMode === "ae"
-                    ? "准备操作 AE"
-                    : "开始普通对话"}
-              </b>
-              <span>
-                {state.chatMode === "ae"
-                  ? "描述想创建或修改的内容，AI 会先生成可审查的动作计划。"
-                  : "像平常一样提问，AI 会正常回答，不会操作 AE。"}
-              </span>
             </div>
-          </div>
+          )}
+          {!hasMessages && !busy && (
+            <div className="empty-mark centered">
+              <b>你好</b>
+              <span>今天想制作什么？</span>
+            </div>
+          )}
           {conversation?.messages.map((message, index) => (
             <article key={index} className={`message ${message.role}`}>
               <small>
@@ -603,12 +545,6 @@ function ChatPage({
                     : "上下文"}
               </small>
               <p>{message.content}</p>
-              {message.usage && (
-                <em>
-                  ↑ {message.usage.input} · ↓ {message.usage.output}{" "}
-                  {message.usage.estimated ? "估算" : ""}
-                </em>
-              )}
             </article>
           ))}
           {busy && (
@@ -646,71 +582,182 @@ function ChatPage({
             </div>
           )}
         </div>
-        <div className="composer">
-          <div className="chat-mode-control">
-            <button
-              type="button"
-              className="chat-mode-trigger"
-              aria-label="选择对话模式"
-              aria-expanded={modeMenuOpen}
-              disabled={busy}
-              onClick={() => setModeMenuOpen((open) => !open)}
-            >
-              <Plus size={16} />
-            </button>
-            {modeMenuOpen && (
-              <div className="chat-mode-menu" role="menu">
-                {([
-                  ["chat", "普通对话"],
-                  ["ae", "操作 AE"],
-                ] as const).map(([value, label]) => (
-                  <button
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={state.chatMode === value}
-                    key={value}
-                    onClick={() => {
-                      update((current) => ({
-                        ...current,
-                        chatMode: value,
-                      }));
-                      setModeMenuOpen(false);
-                      setPlan(null);
-                    }}
+        <div className="composer-shell">
+          {(budget.level === "warning" || budget.level === "blocked") && (
+            <div className={`context-warning ${budget.level}`}>
+              <span>
+                {budget.level === "blocked"
+                  ? "上下文已接近上限，请压缩后继续。"
+                  : "上下文将满，可压缩后继续。"}
+              </span>
+              <button disabled={busy} onClick={archiveWithSummary}>
+                {busy ? "归档中…" : "压缩并续聊"}
+              </button>
+            </div>
+          )}
+          {contextEditor && (
+            <div className="composer-context-editor">
+              <ContextEditor state={state} update={update} />
+              <button type="button" onClick={() => setContextEditor(false)}>
+                完成
+              </button>
+            </div>
+          )}
+          <div className="composer codex-composer">
+            <textarea
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+              placeholder={
+                state.chatMode === "ae"
+                  ? "描述想在 AE 中完成的操作…"
+                  : "输入问题，和 AI 正常对话…"
+              }
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  (event.ctrlKey || event.metaKey)
+                )
+                  send();
+              }}
+            />
+            <div className="composer-controls">
+              <div className="composer-menu-anchor">
+                <button
+                  type="button"
+                  className="composer-icon-button"
+                  aria-label="更多对话选项"
+                  aria-expanded={plusMenuOpen}
+                  onClick={() => setPlusMenuOpen((open) => !open)}
+                >
+                  <Plus size={16} />
+                </button>
+                {plusMenuOpen && (
+                  <div
+                    className="composer-popover context-popover"
+                    role="menu"
                   >
-                    {label}
-                  </button>
-                ))}
+                    <button
+                      type="button"
+                      onClick={() => setContextPickerOpen((open) => !open)}
+                    >
+                      <FileText size={14} /> 上下文档案
+                    </button>
+                    {contextPickerOpen && (
+                      <div className="composer-context-list">
+                        {state.contexts.length === 0 && (
+                          <small>还没有上下文档案</small>
+                        )}
+                        {state.contexts.map((item) => (
+                          <label key={item.id}>
+                            <input
+                              type="checkbox"
+                              checked={selectedContexts.includes(item.id)}
+                              onChange={() =>
+                                setSelectedContexts((ids) =>
+                                  ids.includes(item.id)
+                                    ? ids.filter((id) => id !== item.id)
+                                    : [...ids, item.id],
+                                )
+                              }
+                            />
+                            {item.name}
+                          </label>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setContextEditor(true);
+                            setPlusMenuOpen(false);
+                          }}
+                        >
+                          管理上下文档案
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
+              <div className="composer-menu-anchor">
+                <button
+                  type="button"
+                  className={`composer-control mode-control ${state.chatMode}`}
+                  aria-label="选择对话模式"
+                  aria-expanded={modeMenuOpen}
+                  onClick={() => setModeMenuOpen((open) => !open)}
+                >
+                  {state.chatMode === "ae" ? "操作 AE" : "普通对话"}
+                </button>
+                {modeMenuOpen && (
+                  <div
+                    className="composer-popover mode-popover"
+                    role="menu"
+                  >
+                    {([
+                      ["chat", "普通对话"],
+                      ["ae", "操作 AE"],
+                    ] as const).map(([value, label]) => (
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={state.chatMode === value}
+                        key={value}
+                        onClick={() => {
+                          update((current) => ({
+                            ...current,
+                            chatMode: value,
+                          }));
+                          setModeMenuOpen(false);
+                          setPlan(null);
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <ChatModelMenu
+                profiles={state.profiles}
+                selection={{
+                  profileId: chatSelection.profileId,
+                  model: chatSelection.model,
+                }}
+                onChange={(selection) =>
+                  update((current) => ({
+                    ...current,
+                    activeSelections: setActiveSelection(
+                      current.activeSelections,
+                      "chat",
+                      selection,
+                    ),
+                  }))
+                }
+              />
+              {selectedContexts.length > 0 && (
+                <span className="context-count">
+                  上下文 {selectedContexts.length}
+                </span>
+              )}
+              <button
+                className="send"
+                aria-label="发送消息"
+                disabled={
+                  busy ||
+                  !prompt.trim() ||
+                  budget.level === "blocked" ||
+                  !profile
+                }
+                onClick={send}
+              >
+                {busy ? <LoaderCircle className="spin" /> : <Send />}
+              </button>
+            </div>
+            {!profile && (
+              <small className="composer-hint">
+                请先在 API 页面保存聊天模型
+              </small>
             )}
           </div>
-          <span className={`chat-mode-chip ${state.chatMode}`}>
-            {state.chatMode === "ae" ? "操作 AE" : "普通对话"}
-          </span>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder={
-              state.chatMode === "ae"
-                ? "例如：创建一个 5 秒片头，标题从下方淡入…"
-                : "输入问题，和 AI 正常对话…"
-            }
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) send();
-            }}
-          />
-          <button
-            className="send"
-            disabled={busy || !prompt.trim() || budget.level === "blocked"}
-            onClick={send}
-          >
-            {busy ? <LoaderCircle className="spin" /> : <Send />}
-          </button>
-          <small>
-            {state.chatMode === "ae"
-              ? "Ctrl + Enter 发送 · 所有 AE 动作都会先生成预览"
-              : "Ctrl + Enter 发送 · 普通对话不会操作 AE"}
-          </small>
         </div>
       </div>
     </section>

@@ -7,23 +7,27 @@ with sync_playwright() as p:
     page.wait_for_load_state("networkidle")
 
     assert page.locator(".conversation-frame").is_visible()
-    assert page.locator(".model-switcher").is_visible()
-    assert page.locator(".context-compact").is_visible()
+    assert page.locator(".context-compact").count() == 0
+    assert page.locator(".conversation-toolbar").count() == 0
+    assert page.locator(".chat-layout").get_by_text("tokens", exact=False).count() == 0
+    assert page.get_by_role("button", name="更多对话选项", exact=True).is_visible()
+    assert page.get_by_role("button", name="选择聊天模型", exact=True).is_visible()
+    expect(page.locator(".empty-mark.centered")).to_contain_text("你好")
 
     expect(page.get_by_text("普通对话", exact=True)).to_be_visible()
     page.get_by_role("button", name="选择对话模式", exact=True).click()
     page.get_by_role("menuitemradio", name="操作 AE", exact=True).click()
-    expect(page.locator(".chat-mode-chip.ae")).to_have_text("操作 AE")
-    expect(page.get_by_text("所有 AE 动作都会先生成预览", exact=False)).to_be_visible()
+    expect(page.locator(".mode-control.ae")).to_have_text("操作 AE")
+    expect(page.locator(".ae-project-status")).to_be_visible()
 
     page.get_by_role("button", name="生成", exact=True).click()
     page.get_by_role("button", name="对话", exact=True).click()
-    expect(page.locator(".chat-mode-chip.ae")).to_have_text("操作 AE")
+    expect(page.locator(".mode-control.ae")).to_have_text("操作 AE")
 
     page.wait_for_timeout(400)
     page.reload()
     page.wait_for_load_state("networkidle")
-    expect(page.locator(".chat-mode-chip.ae")).to_have_text("操作 AE")
+    expect(page.locator(".mode-control.ae")).to_have_text("操作 AE")
 
     send = page.locator("button.send")
     send.evaluate("el => el.removeAttribute('disabled')")
