@@ -407,9 +407,9 @@ Expected: production files are built and copied into the current user's CEP exte
 
 - [ ] **Step 5: Inspect the final diff for credentials and protocol leaks**
 
-Run: `git diff --check; rg -n '(?i)(api[_-]?key|token|password)\s*[:=]\s*\S{20,}|Bearer\s+[A-Za-z0-9_-]{24,}|(?:sk|api)[_-][A-Za-z0-9]{24,}' src tests docs`
+Run: `git diff --check; rg -n '(?i)(api[_-]?key|token|password)\s*[:=]\s*\S{20,}|Bearer\s+[A-Za-z0-9_-]{24,}|(?:sk|api)[_-][A-Za-z0-9]{24,}' src tests docs; rg -n 'ACTION_SYSTEM_PROMPT|parseActionResponse' src tests`
 
-Expected: `git diff --check` has no output; `rg` finds no password and no obsolete parser/prompt references.
+Expected: `git diff --check` has no output; the scans find no high-signal credential patterns and no obsolete parser/prompt references.
 
 - [ ] **Step 6: Commit end-to-end coverage**
 

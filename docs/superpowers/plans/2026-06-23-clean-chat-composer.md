@@ -665,7 +665,7 @@ Expected: build completes and the extension is copied to the current user's CEP 
 
 Run: `git diff --check; rg -n '(?i)(api[_-]?key|token|password)\s*[:=]\s*\S{20,}|Bearer\s+[A-Za-z0-9_-]{24,}|(?:sk|api)[_-][A-Za-z0-9]{24,}' src tests docs`
 
-Expected: `git diff --check` has no output and the credential scan finds no secrets.
+Expected: `git diff --check` has no output and the scan finds no high-signal credential patterns.
 
 - [ ] **Step 5: Complete the feature branch workflow**
 

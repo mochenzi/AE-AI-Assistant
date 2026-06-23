@@ -23,7 +23,11 @@ try {
   }
 
   $env:APPDATA = $appData
-  & (Join-Path $scripts 'install-dev.ps1')
+  $installerCommand = Get-Command (Join-Path $scripts 'install-dev.ps1')
+  if (-not $installerCommand.Parameters.ContainsKey('SkipDebugMode')) {
+    throw 'Installer must declare the SkipDebugMode test boundary.'
+  }
+  & $installerCommand -SkipDebugMode
 
   $sourceFiles = Get-ChildItem -LiteralPath $source -Recurse -File
   $targetFiles = Get-ChildItem -LiteralPath $target -Recurse -File

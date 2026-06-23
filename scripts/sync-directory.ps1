@@ -1,3 +1,25 @@
+function Assert-NoReparsePointComponent {
+  param([Parameter(Mandatory = $true)][string]$Path)
+
+  $root = [IO.Path]::GetPathRoot($Path)
+  $current = $root
+  $rootItem = Get-Item -LiteralPath $current -Force
+  if (($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+    throw "Refusing destination path containing a reparse point: $current"
+  }
+  $components = $Path.Substring($root.Length).Split(@('\', '/'), [StringSplitOptions]::RemoveEmptyEntries)
+  foreach ($component in $components) {
+    $current = Join-Path $current $component
+    if (-not (Test-Path -LiteralPath $current)) {
+      break
+    }
+    $item = Get-Item -LiteralPath $current -Force
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+      throw "Refusing destination path containing a reparse point: $current"
+    }
+  }
+}
+
 function Sync-DirectoryMirror {
   param(
     [Parameter(Mandatory = $true)][string]$Source,
@@ -18,6 +40,8 @@ function Sync-DirectoryMirror {
       $targetPrefix.StartsWith($sourcePrefix, [StringComparison]::OrdinalIgnoreCase)) {
     throw "Source and target directories must not overlap: $sourcePath -> $targetPath"
   }
+
+  Assert-NoReparsePointComponent -Path $targetPath
 
   if (Test-Path -LiteralPath $targetPath) {
     $resolvedTarget = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $targetPath).Path).TrimEnd('\')
