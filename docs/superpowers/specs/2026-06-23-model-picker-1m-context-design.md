@@ -20,7 +20,7 @@ AE CEP 使用的旧版 Chromium 会绘制 `datalist` 的倒三角，但点击后
 
 ## 数据与迁移
 
-继续复用 `ApiProfile.cachedModels[].contextWindow`，不增加新的持久化格式。旧档案无需迁移。同步模型时保留用户已声明为 `1,000,000` 的同名模型，避免下一次同步静默覆盖用户声明。
+在 `ApiProfile.cachedModels[]` 增加可选字段 `declaredContextWindow`。供应商同步值继续保存在 `contextWindow`，用户声明保存在 `declaredContextWindow`；有效长度优先使用声明值。旧档案无需迁移。同步模型时按模型 ID 保留声明字段，取消勾选后自然恢复供应商同步值。
 
 ## 验证
 
