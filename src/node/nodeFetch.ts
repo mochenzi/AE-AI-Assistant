@@ -1,4 +1,4 @@
-import { request as httpRequest } from 'node:http';
+import { request as httpRequest, type RequestOptions } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 
 function abortError(): Error {
@@ -27,6 +27,17 @@ function bodyBuffer(body: BodyInit | null | undefined): Buffer | undefined {
   throw new Error('Node HTTP 传输暂不支持该请求体类型');
 }
 
+export function createNodeRequestOptions(url: URL, method: string, headers: Record<string, string>): RequestOptions {
+  return {
+    protocol: url.protocol,
+    hostname: url.hostname,
+    ...(url.port ? { port: url.port } : {}),
+    path: `${url.pathname}${url.search}`,
+    method,
+    headers,
+  };
+}
+
 async function requestWithNode(input: RequestInfo | URL, init: RequestInit = {}, redirects = 0): Promise<Response> {
   const url = new URL(typeof input === 'string' || input instanceof URL ? input.toString() : input.url);
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(`不支持的网络协议：${url.protocol}`);
@@ -39,7 +50,7 @@ async function requestWithNode(input: RequestInfo | URL, init: RequestInit = {},
   const transport = url.protocol === 'https:' ? httpsRequest : httpRequest;
 
   return new Promise<Response>((resolve, reject) => {
-    const request = transport(url, { method, headers }, (response) => {
+    const request = transport(createNodeRequestOptions(url, method, headers), (response) => {
       const status = response.statusCode || 0;
       const location = response.headers.location;
       if (location && [301, 302, 303, 307, 308].includes(status)) {

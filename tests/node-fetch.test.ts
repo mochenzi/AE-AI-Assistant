@@ -1,12 +1,30 @@
 import { afterEach, describe, expect, test } from 'vitest';
 import { createServer, type Server } from 'node:http';
-import { nodeFetch } from '../src/node/nodeFetch';
+import { createNodeRequestOptions, nodeFetch } from '../src/node/nodeFetch';
 
 describe('CEP Node HTTP transport', () => {
   let server: Server | undefined;
 
   afterEach(async () => {
     if (server) await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
+  });
+
+  test('converts URLs to plain Node request options for CEP cross-realm compatibility', () => {
+    const options = createNodeRequestOptions(
+      new URL('https://api.example.com:8443/v1/models?capability=chat'),
+      'GET',
+      { Authorization: 'Bearer secret' },
+    );
+
+    expect(options).toEqual({
+      protocol: 'https:',
+      hostname: 'api.example.com',
+      port: '8443',
+      path: '/v1/models?capability=chat',
+      method: 'GET',
+      headers: { Authorization: 'Bearer secret' },
+    });
+    expect(Object.getPrototypeOf(options)).toBe(Object.prototype);
   });
 
   test('sends requests through Node HTTP and returns a fetch-compatible response', async () => {
