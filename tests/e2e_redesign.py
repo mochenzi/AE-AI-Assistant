@@ -63,5 +63,37 @@ with sync_playwright() as p:
     page.get_by_label("额外 Headers (JSON)", exact=True).fill('{"X-Dirty":"discard-me"}')
     page.get_by_role("button", name="放弃修改", exact=True).click()
     expect(page.get_by_label("额外 Headers (JSON)", exact=True)).to_have_value("{}")
+    page.get_by_label("声明支持 1M", exact=True).uncheck()
+    page.get_by_role("button", name="保存档案", exact=True).click()
+
+    page.get_by_role("button", name="对话", exact=True).click()
+    page.get_by_role("button", name="选择聊天模型", exact=True).click()
+    expect(page.get_by_text("OpenAI", exact=True)).to_be_visible()
+    page.get_by_role("menuitemradio", name="preview-model", exact=True).click()
+    expect(page.get_by_role("button", name="选择聊天模型", exact=True)).to_contain_text("preview-model")
+
+    page.get_by_role("button", name="更多对话选项", exact=True).click()
+    page.get_by_role("button", name="上下文档案", exact=True).click()
+    page.get_by_role("button", name="管理上下文档案", exact=True).click()
+    page.locator('.inline-editor input:not([type="file"])').fill("项目背景")
+    page.locator(".inline-editor textarea").fill("品牌色为绿色。")
+    page.get_by_role("button", name="保存 MD 档案", exact=True).click()
+    page.get_by_role("button", name="完成", exact=True).click()
+
+    page.get_by_role("button", name="更多对话选项", exact=True).click()
+    context_item = page.get_by_text("项目背景", exact=True)
+    if not context_item.is_visible():
+        page.get_by_role("button", name="上下文档案", exact=True).click()
+    context_item.click()
+    expect(page.locator(".context-count")).to_have_text("上下文 1")
+
+    expect(page.locator(".context-warning")).to_have_count(0)
+    page.locator(".codex-composer textarea").fill("请继续分析。" * 32000)
+    expect(page.locator(".context-warning")).to_be_visible()
+    expect(page.get_by_role("button", name="发送消息", exact=True)).to_be_disabled()
+    page.locator(".codex-composer textarea").fill("你好")
+    page.get_by_role("button", name="发送消息", exact=True).click()
+    expect(page.locator(".empty-mark.centered")).to_have_count(0)
+    expect(page.locator(".message em")).to_have_count(0)
 
     browser.close()
