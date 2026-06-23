@@ -57,5 +57,6 @@ export function migrateState(input: unknown): AppState {
     tokenTotals: copyJson(source.tokenTotals ?? defaults.tokenTotals),
     activeSelections,
     archiveDirectory: source.archiveDirectory ?? '',
+    chatMode: source.chatMode === 'ae' ? 'ae' : 'chat',
   };
 }

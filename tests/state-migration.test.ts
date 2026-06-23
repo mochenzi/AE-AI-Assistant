@@ -8,6 +8,7 @@ describe('state migration', () => {
     expect(migrated.archiveDirectory).toBe('');
     expect(migrated.contexts).toEqual([]);
     expect(migrated.tasks).toEqual([]);
+    expect(migrated.chatMode).toBe('chat');
   });
 
   test('preserves legacy collections and enriches profiles and conversations', () => {
@@ -38,5 +39,10 @@ describe('state migration', () => {
     const migrated = migrateState(input);
     migrated.profiles[0].cachedModels!.push({ id: 'other' });
     expect(JSON.stringify(input)).toBe(snapshot);
+  });
+
+  test('preserves AE mode and repairs unsupported mode values', () => {
+    expect(migrateState({ chatMode: 'ae' }).chatMode).toBe('ae');
+    expect(migrateState({ chatMode: 'unexpected' } as never).chatMode).toBe('chat');
   });
 });
