@@ -12,6 +12,19 @@ const profile: ApiProfile = {
 };
 
 describe('API client', () => {
+  test('uses the global receiver required by CEP native fetch', async () => {
+    let receiver: unknown;
+    const nativeLikeFetch = function (this: unknown) {
+      receiver = this;
+      return Promise.resolve(new Response(JSON.stringify({ data: [] }), { status: 200 }));
+    } as typeof fetch;
+
+    const client = new ApiClient(profile, 'secret', nativeLikeFetch);
+    await client.listModels();
+
+    expect(receiver).toBe(globalThis);
+  });
+
   test('normalizes model and balance responses through configured paths', async () => {
     const fetcher: typeof fetch = async (url) => {
       const value = String(url);

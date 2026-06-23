@@ -10,7 +10,11 @@ function joinUrl(base: string, endpoint: string): string {
 }
 
 export class ApiClient {
-  constructor(private readonly profile: ApiProfile, private readonly apiKey: string, private readonly fetcher: typeof fetch = fetch) {}
+  private readonly fetcher: typeof fetch;
+
+  constructor(private readonly profile: ApiProfile, private readonly apiKey: string, fetcher: typeof fetch = fetch) {
+    this.fetcher = fetcher.bind(globalThis);
+  }
 
   private async request(endpoint: string, init: RequestInit = {}): Promise<unknown> {
     const controller = new AbortController();
