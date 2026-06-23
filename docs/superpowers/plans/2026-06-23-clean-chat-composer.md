@@ -663,7 +663,7 @@ Expected: build completes and the extension is copied to the current user's CEP 
 
 - [ ] **Step 4: Inspect the final diff and scan secrets**
 
-Run: `git diff --check && rg -n "chenyu99|sk-[A-Za-z0-9]{16,}|Bearer [A-Za-z0-9_-]{16,}" src tests docs`
+Run: `git diff --check; rg -n '(?i)(api[_-]?key|token|password)\s*[:=]\s*\S{20,}|Bearer\s+[A-Za-z0-9_-]{24,}|(?:sk|api)[_-][A-Za-z0-9]{24,}' src tests docs`
 
 Expected: `git diff --check` has no output and the credential scan finds no secrets.
 

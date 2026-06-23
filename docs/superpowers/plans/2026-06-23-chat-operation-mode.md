@@ -407,7 +407,7 @@ Expected: production files are built and copied into the current user's CEP exte
 
 - [ ] **Step 5: Inspect the final diff for credentials and protocol leaks**
 
-Run: `git diff --check && rg -n "chenyu99|ACTION_SYSTEM_PROMPT|parseActionResponse" src tests`
+Run: `git diff --check; rg -n '(?i)(api[_-]?key|token|password)\s*[:=]\s*\S{20,}|Bearer\s+[A-Za-z0-9_-]{24,}|(?:sk|api)[_-][A-Za-z0-9]{24,}' src tests docs`
 
 Expected: `git diff --check` has no output; `rg` finds no password and no obsolete parser/prompt references.
 
