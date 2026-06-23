@@ -26,8 +26,9 @@ import {
   type Conversation,
 } from "../shared/appState";
 import {
-  ACTION_SYSTEM_PROMPT,
-  parseActionResponse,
+  AE_OPERATION_SYSTEM_PROMPT,
+  CHAT_SYSTEM_PROMPT,
+  parseAssistantResponse,
 } from "../shared/actionResponse";
 import {
   requiresDangerConfirmation,
@@ -290,8 +291,8 @@ function ChatPage({
     () => sessionStorage.getItem("ae-ai-template") || "",
   );
   const [busy, setBusy] = useState(false);
-  const [stream, setStream] = useState("");
   const [plan, setPlan] = useState<AeActionPlan | null>(null);
+  const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [selectedContexts, setSelectedContexts] = useState<string[]>(
     state.contexts.map(({ id }) => id),
   );
@@ -302,11 +303,15 @@ function ChatPage({
     ? withSelectedModel(profile, "chat", chatSelection.model)
     : undefined;
   const conversation = state.conversations.find(({ archived }) => !archived);
+  const systemPrompt =
+    state.chatMode === "ae"
+      ? AE_OPERATION_SYSTEM_PROMPT
+      : CHAT_SYSTEM_PROMPT;
   const injected = state.contexts.filter(({ id }) =>
     selectedContexts.includes(id),
   );
   const estimated = estimateMessages([
-    { role: "system", content: ACTION_SYSTEM_PROMPT },
+    { role: "system", content: systemPrompt },
     ...injected.map(({ content }) => ({ role: "system" as const, content })),
     ...(conversation?.messages ?? []),
     { role: "user", content: prompt },
@@ -325,7 +330,6 @@ function ChatPage({
     }
     if (!prompt.trim() || budget.level === "blocked") return;
     setBusy(true);
-    setStream("");
     setPlan(null);
     setNotice("正在请求模型…");
     const active: Conversation = conversation ?? {
@@ -337,7 +341,7 @@ function ChatPage({
       createdAt: now(),
     };
     const messages = [
-      { role: "system" as const, content: ACTION_SYSTEM_PROMPT },
+      { role: "system" as const, content: systemPrompt },
       {
         role: "system" as const,
         content: `当前 AE 工程上下文：${JSON.stringify(project)}`,
@@ -355,7 +359,6 @@ function ChatPage({
       await runtime.chat(requestProfile, messages, (event) => {
         if (event.type === "text") {
           text += event.text;
-          setStream(text);
         }
         if (event.type === "usage")
           usage = {
@@ -364,18 +367,19 @@ function ChatPage({
             estimated: false,
           };
       });
-      try {
-        setPlan(parseActionResponse(text));
-      } catch {
-        /* ordinary assistant response remains visible */
-      }
+      const response = parseAssistantResponse(text);
+      setPlan(response.kind === "ae_action" ? response.plan : null);
       const nextConversation = {
         ...active,
         contextProfileIds: selectedContexts,
         messages: [
           ...active.messages,
           { role: "user" as const, content: prompt },
-          { role: "assistant" as const, content: text, usage },
+          {
+            role: "assistant" as const,
+            content: response.visibleText,
+            usage,
+          },
         ],
       };
       update((s) => ({
@@ -573,9 +577,17 @@ function ChatPage({
           <div className="empty-mark">
             <Bot size={24} />
             <div>
-              <b>{conversation ? conversation.title : "准备操作 AE"}</b>
+              <b>
+                {conversation
+                  ? conversation.title
+                  : state.chatMode === "ae"
+                    ? "准备操作 AE"
+                    : "开始普通对话"}
+              </b>
               <span>
-                描述你想创建或修改的内容，AI 会先生成可审查的动作计划。
+                {state.chatMode === "ae"
+                  ? "描述想创建或修改的内容，AI 会先生成可审查的动作计划。"
+                  : "像平常一样提问，AI 会正常回答，不会操作 AE。"}
               </span>
             </div>
           </div>
@@ -597,10 +609,15 @@ function ChatPage({
               )}
             </article>
           ))}
-          {stream && busy && (
-            <article className="message assistant">
-              <small>AI · STREAMING</small>
-              <p>{stream}</p>
+          {busy && (
+            <article
+              className="message assistant pending-response"
+              aria-live="polite"
+            >
+              <small>AI</small>
+              <p>
+                <LoaderCircle className="spin" size={14} /> 正在思考…
+              </p>
             </article>
           )}
           {plan && (
@@ -628,10 +645,54 @@ function ChatPage({
           )}
         </div>
         <div className="composer">
+          <div className="chat-mode-control">
+            <button
+              type="button"
+              className="chat-mode-trigger"
+              aria-label="选择对话模式"
+              aria-expanded={modeMenuOpen}
+              disabled={busy}
+              onClick={() => setModeMenuOpen((open) => !open)}
+            >
+              <Plus size={16} />
+            </button>
+            {modeMenuOpen && (
+              <div className="chat-mode-menu" role="menu">
+                {([
+                  ["chat", "普通对话"],
+                  ["ae", "操作 AE"],
+                ] as const).map(([value, label]) => (
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={state.chatMode === value}
+                    key={value}
+                    onClick={() => {
+                      update((current) => ({
+                        ...current,
+                        chatMode: value,
+                      }));
+                      setModeMenuOpen(false);
+                      setPlan(null);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <span className={`chat-mode-chip ${state.chatMode}`}>
+            {state.chatMode === "ae" ? "操作 AE" : "普通对话"}
+          </span>
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="例如：创建一个 5 秒片头，标题从下方淡入…"
+            placeholder={
+              state.chatMode === "ae"
+                ? "例如：创建一个 5 秒片头，标题从下方淡入…"
+                : "输入问题，和 AI 正常对话…"
+            }
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) send();
             }}
@@ -643,7 +704,11 @@ function ChatPage({
           >
             {busy ? <LoaderCircle className="spin" /> : <Send />}
           </button>
-          <small>Ctrl + Enter 发送 · 所有 AE 动作先预览</small>
+          <small>
+            {state.chatMode === "ae"
+              ? "Ctrl + Enter 发送 · 所有 AE 动作都会先生成预览"
+              : "Ctrl + Enter 发送 · 普通对话不会操作 AE"}
+          </small>
         </div>
       </div>
     </section>
