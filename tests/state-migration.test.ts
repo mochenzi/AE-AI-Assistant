@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { migrateState } from '../src/shared/stateMigration';
+import { createConversationDocument } from '../src/shared/conversationWorkspace';
 
 describe('state migration', () => {
   test('adds new state fields to a partial legacy state', () => {
@@ -46,5 +47,36 @@ describe('state migration', () => {
   test('preserves AE mode and repairs unsupported mode values', () => {
     expect(migrateState({ chatMode: 'ae' }).chatMode).toBe('ae');
     expect(migrateState({ chatMode: 'unexpected' } as never).chatMode).toBe('chat');
+  });
+
+  test('drops malformed legacy collection entries instead of throwing', () => {
+    const migrated = migrateState({
+      profiles: [null, 'invalid', 42],
+      conversations: [null, 'invalid', 42],
+    });
+
+    expect(migrated.profiles).toEqual([]);
+    expect(migrated.conversations).toEqual([]);
+  });
+
+  test('repairs non-string conversation workspace locations', () => {
+    const migrated = migrateState({
+      conversationDataDirectory: 42,
+      activeConversationId: { id: 'c1' },
+    });
+
+    expect(migrated.conversationDataDirectory).toBe('');
+    expect(migrated.activeConversationId).toBe('');
+  });
+
+  test('does not migrate external workspace documents into legacy conversations', () => {
+    const external = createConversationDocument(
+      'external-c1',
+      { key: 'project', label: 'intro.aep', unsaved: false },
+      [],
+      '2026-06-24T00:00:00.000Z',
+    );
+
+    expect(migrateState({ conversations: [external] }).conversations).toEqual([]);
   });
 });

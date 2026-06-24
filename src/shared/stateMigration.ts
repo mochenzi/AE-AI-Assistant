@@ -1,10 +1,21 @@
 import { createDefaultState, type ActiveModelSelection, type AppState, type Conversation } from './appState';
 import type { ApiProfile, Capability } from './types';
 
-type LegacyState = Partial<AppState> & { profiles?: Array<Partial<ApiProfile>>; conversations?: Array<Partial<Conversation>> };
+type LegacyState = Omit<Partial<AppState>, 'profiles' | 'conversations'> & {
+  profiles?: unknown;
+  conversations?: unknown;
+};
 
 function copyJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isLegacyConversation(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) && (value.version === undefined || value.version === 0);
 }
 
 function migrateProfile(profile: Partial<ApiProfile>): ApiProfile {
@@ -39,8 +50,12 @@ function legacySelections(state: LegacyState, profiles: ApiProfile[]): AppState[
 export function migrateState(input: unknown): AppState {
   const defaults = createDefaultState();
   const source = input && typeof input === 'object' ? input as LegacyState : {};
-  const profiles = Array.isArray(source.profiles) ? source.profiles.map(migrateProfile) : defaults.profiles;
-  const conversations = Array.isArray(source.conversations) ? source.conversations.map(migrateConversation) : defaults.conversations;
+  const profiles = Array.isArray(source.profiles)
+    ? source.profiles.filter(isRecord).map((profile) => migrateProfile(profile as Partial<ApiProfile>))
+    : defaults.profiles;
+  const conversations = Array.isArray(source.conversations)
+    ? source.conversations.filter(isLegacyConversation).map((conversation) => migrateConversation(conversation as Partial<Conversation>))
+    : defaults.conversations;
   const activeSelections = source.activeSelections
     ? copyJson(source.activeSelections)
     : legacySelections(source, profiles);
@@ -57,8 +72,8 @@ export function migrateState(input: unknown): AppState {
     tokenTotals: copyJson(source.tokenTotals ?? defaults.tokenTotals),
     activeSelections,
     archiveDirectory: source.archiveDirectory ?? '',
-    conversationDataDirectory: source.conversationDataDirectory ?? '',
-    activeConversationId: source.activeConversationId ?? '',
+    conversationDataDirectory: typeof source.conversationDataDirectory === 'string' ? source.conversationDataDirectory : '',
+    activeConversationId: typeof source.activeConversationId === 'string' ? source.activeConversationId : '',
     chatMode: source.chatMode === 'ae' ? 'ae' : 'chat',
   };
 }

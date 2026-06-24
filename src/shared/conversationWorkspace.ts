@@ -39,18 +39,38 @@ export interface ConversationSummary {
   updatedAt: string;
 }
 
-function stableHash(value: string): string {
-  let hash = 2166136261;
+function hex32(value: number): string {
+  return (`00000000${(value >>> 0).toString(16)}`).slice(-8);
+}
+
+function stableHash128(value: string): string {
+  let first = 1779033703;
+  let second = 3144134277;
+  let third = 1013904242;
+  let fourth = 2773480762;
   for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
+    const codeUnit = value.charCodeAt(index);
+    first = second ^ Math.imul(first ^ codeUnit, 597399067);
+    second = third ^ Math.imul(second ^ codeUnit, 2869860233);
+    third = fourth ^ Math.imul(third ^ codeUnit, 951274213);
+    fourth = first ^ Math.imul(fourth ^ codeUnit, 2716044179);
   }
-  return (hash >>> 0).toString(16);
+
+  first = Math.imul(third ^ (first >>> 18), 597399067);
+  second = Math.imul(fourth ^ (second >>> 22), 2869860233);
+  third = Math.imul(first ^ (third >>> 17), 951274213);
+  fourth = Math.imul(second ^ (fourth >>> 19), 2716044179);
+  first ^= second ^ third ^ fourth;
+  second ^= first;
+  third ^= first;
+  fourth ^= first;
+
+  return `${hex32(first)}${hex32(second)}${hex32(third)}${hex32(fourth)}`;
 }
 
 export function projectIdentity(projectPath: string, projectName: string): ProjectIdentity {
   if (!projectPath) {
-    return { key: 'unsaved', label: projectName || '未保存工程', unsaved: true };
+    return { key: 'unsaved', label: projectName || '\u672a\u4fdd\u5b58\u5de5\u7a0b', unsaved: true };
   }
 
   const normalized = projectPath.replace(/\\/g, '/').toLowerCase();
@@ -59,14 +79,15 @@ export function projectIdentity(projectPath: string, projectName: string): Proje
     .replace(/^_+|_+$/g, '')
     .slice(0, 60);
   return {
-    key: `${readable}_${stableHash(normalized)}`,
+    key: `${readable}_${stableHash128(normalized)}`,
     label: projectName,
     unsaved: false,
   };
 }
 
 export function titleFromPrompt(prompt: string): string {
-  return prompt.trim().replace(/\s+/g, ' ').slice(0, 32) || '新对话';
+  const normalized = prompt.trim().replace(/\s+/g, ' ');
+  return Array.from(normalized).slice(0, 32).join('') || '\u65b0\u5bf9\u8bdd';
 }
 
 export function createConversationDocument(
@@ -78,8 +99,8 @@ export function createConversationDocument(
   return {
     version: 1,
     id,
-    project,
-    title: '新对话',
+    project: { ...project },
+    title: '\u65b0\u5bf9\u8bdd',
     messages: [],
     markdownSnapshots: markdownSnapshots.map((snapshot) => ({ ...snapshot })),
     contextProfileIds: [],

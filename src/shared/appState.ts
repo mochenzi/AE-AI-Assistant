@@ -1,6 +1,8 @@
 import type { ApiProfile, Capability, ChatMessage, ContextProfile, MediaTask, PromptTemplate } from './types';
 
+/** @deprecated Legacy migration only. */
 export interface Conversation {
+  version?: 0;
   id: string;
   title: string;
   messages: ChatMessage[];
@@ -23,6 +25,7 @@ export interface AppState {
   defaultProfiles: Partial<Record<'chat' | 'image' | 'video', string>>;
   contexts: ContextProfile[];
   templates: PromptTemplate[];
+  /** @deprecated Legacy migration only. External ConversationDocument values must not be stored here. */
   conversations: Conversation[];
   tasks: MediaTask[];
   tokenTotals: Record<string, { input: number; output: number }>;
