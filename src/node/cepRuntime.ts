@@ -1,5 +1,5 @@
-import { mkdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import { homedir } from 'node:os';
 import { AtomicJsonStore } from './atomicStore';
 import { ApiClient } from './apiClient';
@@ -8,6 +8,8 @@ import { nodeFetch } from './nodeFetch';
 import { createDefaultState, type AppState } from '../shared/appState';
 import type { ApiProfile, ChatMessage, ContextProfile } from '../shared/types';
 import { createArchiveFilename, serializeConversation, type ArchiveConversation } from '../shared/conversationArchive';
+import type { ConversationDocument, ConversationSummary, ProjectIdentity } from '../shared/conversationWorkspace';
+import { ConversationStore } from './conversationStore';
 
 export async function writeConversationArchive(directory: string, conversation: ArchiveConversation, contexts: ContextProfile[]): Promise<string> {
   let directoryStat;
@@ -67,6 +69,25 @@ class CepRuntime {
   async pollVideo(profile: ApiProfile, taskId: string) { return (await this.client(profile)).getVideoStatus(taskId); }
   async download(url: string, outputDirectory: string) { const folder = await this.generatedFolder(outputDirectory); const path = join(folder, `video-${Date.now()}.mp4`); const response = await nodeFetch(url); if (!response.ok) throw new Error(`素材下载失败（HTTP ${response.status}）`); await writeFile(path, Buffer.from(await response.arrayBuffer())); return path; }
   async archiveConversation(directory: string, conversation: ArchiveConversation, contexts: ContextProfile[]) { return writeConversationArchive(directory, conversation, contexts); }
+  async assertConversationDirectory(directory: string) { return new ConversationStore(directory).assertWritable(); }
+  async createConversation(directory: string, project: ProjectIdentity, markdownPaths: string[], id: string, at: string): Promise<ConversationDocument> {
+    const snapshots = [];
+    for (const path of markdownPaths) {
+      try {
+        snapshots.push({ name: basename(path), sourcePath: path, content: await readFile(path, 'utf8') });
+      } catch (error) {
+        const reason = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : '未知错误';
+        throw new Error(`无法读取 Markdown「${basename(path)}」：${reason}`);
+      }
+    }
+    return new ConversationStore(directory).create(project, snapshots, id, at);
+  }
+  async readConversation(directory: string, projectKey: string, id: string): Promise<ConversationDocument> { return new ConversationStore(directory).read(projectKey, id); }
+  async writeConversation(directory: string, document: ConversationDocument): Promise<void> { return new ConversationStore(directory).write(document); }
+  async listConversations(directory: string, projectKey?: string): Promise<ConversationSummary[]> { return new ConversationStore(directory).list(projectKey); }
+  async searchConversations(directory: string, query: string): Promise<ConversationSummary[]> { return new ConversationStore(directory).search(query); }
+  async renameConversation(directory: string, projectKey: string, id: string, title: string): Promise<ConversationDocument> { return new ConversationStore(directory).rename(projectKey, id, title); }
+  async moveConversationProject(directory: string, fromKey: string, project: ProjectIdentity): Promise<void> { return new ConversationStore(directory).moveProject(fromKey, project); }
   private async generatedFolder(base: string) { const date = new Date().toISOString().slice(0, 10); const folder = join(base, 'AI Generated', date); await mkdir(folder, { recursive: true }); return folder; }
 }
 
