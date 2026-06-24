@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { ApiClient } from '../src/node/apiClient';
+import { ApiClient, ApiError } from '../src/node/apiClient';
 import type { ApiProfile } from '../src/shared/types';
 
 const profile: ApiProfile = {
@@ -77,8 +77,8 @@ async function collect(client: ApiClient) {
 test('retries an empty JSON response once without response_format', async () => {
   const bodies: Array<Record<string, unknown>> = [];
   const responses = [
-    'data: {"choices":[{"delta":{"reasoning_content":"分析中"}}]}\n\ndata: [DONE]\n\n',
-    'data: {"choices":[{"delta":{"content":"{\\"kind\\":\\"chat\\",\\"message\\":\\"好了\\"}"}}]}\n\ndata: [DONE]\n\n',
+    'data: {"choices":[{"delta":{"reasoning_content":"分析中"}}]}\n\ndata: {"usage":{"prompt_tokens":9,"completion_tokens":4}}\n\ndata: [DONE]\n\n',
+    'data: {"choices":[{"delta":{"content":"{\\"kind\\":\\"chat\\",\\"message\\":\\"好了\\"}"}}]}\n\ndata: {"usage":{"prompt_tokens":10,"completion_tokens":5}}\n\ndata: [DONE]\n\n',
   ];
   const fetcher: typeof fetch = async (_url, init) => {
     bodies.push(JSON.parse(String(init?.body)));
@@ -86,6 +86,7 @@ test('retries an empty JSON response once without response_format', async () => 
   };
   await expect(collect(new ApiClient(profile, 'secret', fetcher))).resolves.toEqual([
     { type: 'text', text: '{"kind":"chat","message":"好了"}' },
+    { type: 'usage', input: 10, output: 5 },
   ]);
   expect(bodies).toHaveLength(2);
   expect(bodies[0]).toHaveProperty('response_format');
@@ -103,8 +104,13 @@ test('does not retry a non-empty first response', async () => {
 });
 
 test('rejects after two empty JSON responses', async () => {
-  const fetcher: typeof fetch = async () => new Response('data: {"choices":[{"delta":{"reasoning_content":"仍在想"}}]}\n\ndata: [DONE]\n\n');
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls += 1;
+    return new Response('data: {"choices":[{"delta":{"reasoning_content":"仍在想"}}]}\n\ndata: [DONE]\n\n');
+  };
   await expect(collect(new ApiClient(profile, 'secret', fetcher))).rejects.toThrow('模型连续返回空内容');
+  expect(calls).toBe(2);
 });
 
 test('does not retry an empty prompt-only response', async () => {
@@ -112,5 +118,41 @@ test('does not retry an empty prompt-only response', async () => {
   let calls = 0;
   const fetcher: typeof fetch = async () => { calls += 1; return new Response('data: [DONE]\n\n'); };
   await expect(collect(new ApiClient(promptOnly, 'secret', fetcher))).rejects.toThrow('模型没有返回内容');
+  expect(calls).toBe(1);
+});
+
+test('does not retry a non-2xx chat response', async () => {
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls += 1;
+    return new Response('upstream failed', { status: 503 });
+  };
+  let caught: unknown;
+  try {
+    await collect(new ApiClient(profile, 'secret', fetcher));
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught).toBeInstanceOf(ApiError);
+  expect(caught).toMatchObject({ status: 503, message: 'API 请求失败（HTTP 503）' });
+  expect(calls).toBe(1);
+});
+
+test('does not retry an aborted chat request and reports a timeout', async () => {
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls += 1;
+    const error = new Error('aborted');
+    error.name = 'AbortError';
+    throw error;
+  };
+  let caught: unknown;
+  try {
+    await collect(new ApiClient(profile, 'secret', fetcher));
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught).toBeInstanceOf(ApiError);
+  expect(caught).toMatchObject({ message: '请求超时，请检查网络或增大超时时间' });
   expect(calls).toBe(1);
 });

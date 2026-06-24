@@ -108,6 +108,9 @@ export class ApiClient {
       });
       if (!response.ok) throw new ApiError(this.describeHttpError(response.status), response.status, await response.text());
       return parseChatSse(await response.text());
+    } catch (error) {
+      if ((error as Error).name === 'AbortError') throw new ApiError('请求超时，请检查网络或增大超时时间');
+      throw error;
     } finally {
       clearTimeout(timer);
     }
