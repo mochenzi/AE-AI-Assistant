@@ -9,7 +9,12 @@ import { createDefaultState, type AppState } from '../shared/appState';
 import type { ApiProfile, ChatMessage, ContextProfile } from '../shared/types';
 import { createArchiveFilename, serializeConversation, type ArchiveConversation } from '../shared/conversationArchive';
 import type { ConversationDocument, ConversationSummary, ProjectIdentity } from '../shared/conversationWorkspace';
+import { redactSecrets } from '../shared/redact';
 import { ConversationStore } from './conversationStore';
+
+function safeMarkdownFilename(path: string): string {
+  return redactSecrets(basename(path)).replace(/sk-[a-z0-9._-]{6,}/gi, '[REDACTED]');
+}
 
 export async function writeConversationArchive(directory: string, conversation: ArchiveConversation, contexts: ContextProfile[]): Promise<string> {
   let directoryStat;
@@ -77,7 +82,7 @@ class CepRuntime {
         snapshots.push({ name: basename(path), sourcePath: path, content: await readFile(path, 'utf8') });
       } catch (error) {
         const reason = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : '未知错误';
-        throw new Error(`无法读取 Markdown「${basename(path)}」：${reason}`);
+        throw new Error(`无法读取 Markdown「${safeMarkdownFilename(path)}」：${reason}`);
       }
     }
     return new ConversationStore(directory).create(project, snapshots, id, at);

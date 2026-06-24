@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { ConversationStore } from '../src/node/conversationStore';
@@ -63,8 +63,21 @@ describe('ConversationStore', () => {
       expect.objectContaining({ id: 'healthy' }),
     ]);
     const names = await readdir(join(directory, project.key));
-    expect(names).toContain('broken.json.corrupt');
+    expect(names.some((name) => name.startsWith('broken.json.') && name.endsWith('.corrupt'))).toBe(true);
     expect(names).not.toContain('broken.json');
+  });
+
+  test('refuses a project junction that escapes the selected root', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-conversations-'));
+    const selected = join(directory, 'selected');
+    const outside = join(directory, 'outside');
+    await mkdir(selected);
+    await mkdir(outside);
+    await symlink(outside, join(selected, project.key), 'junction');
+    const store = new ConversationStore(selected);
+
+    await expect(store.create(project, [], 'escaped', now)).rejects.toThrow('不安全');
+    await expect(readFile(join(outside, 'escaped.json'), 'utf8')).rejects.toThrow();
   });
 
   test('rejects a missing external root without creating it', async () => {
@@ -73,6 +86,23 @@ describe('ConversationStore', () => {
 
     await expect(new ConversationStore(missing).assertWritable()).rejects.toThrow('会话目录');
     await expect(readdir(missing)).rejects.toThrow();
+  });
+
+  test('does not leak a sensitive root path in read errors', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-conversations-'));
+    const secret = 'token=store-secret-value';
+    const selected = join(directory, secret);
+    await mkdir(selected);
+    const store = new ConversationStore(selected);
+
+    let message = '';
+    try {
+      await store.read(project.key, 'missing');
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).not.toContain('store-secret-value');
+    expect(message).toMatch(/ENOENT|不存在/);
   });
 
   test('rejects path traversal in project keys and conversation ids', async () => {
@@ -99,6 +129,80 @@ describe('ConversationStore', () => {
     );
     await expect(store.read('project-b', 'other')).resolves.toEqual(expect.objectContaining({ id: 'other' }));
     await expect(store.read(project.key, 'c1')).rejects.toThrow();
+  });
+
+  test('searches message content locally as well as title and project label', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-conversations-'));
+    const store = new ConversationStore(directory);
+    const document = await store.create(project, [], 'message-hit', now);
+    document.messages.push({ role: 'user', content: 'needle only in private message body' });
+    await store.write(document);
+
+    await expect(store.search('needle only')).resolves.toEqual([
+      expect.objectContaining({ id: 'message-hit' }),
+    ]);
+  });
+
+  test('quarantines documents whose stored identity does not match their path', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-conversations-'));
+    const store = new ConversationStore(directory);
+    const document = await store.create(project, [], 'c1', now);
+    document.project = { key: 'project-b', label: 'B.aep', unsaved: false };
+    await writeFile(join(directory, project.key, 'c1.json'), JSON.stringify(document), 'utf8');
+
+    await expect(store.read(project.key, 'c1')).rejects.toThrow('损坏');
+    await expect(store.list(project.key)).resolves.toEqual([]);
+    expect((await readdir(join(directory, project.key))).some((name) => name.endsWith('.corrupt'))).toBe(true);
+  });
+
+  test('rename cannot follow a forged identity into another project', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-conversations-'));
+    const store = new ConversationStore(directory);
+    const victim = await store.create({ key: 'project-b', label: 'B.aep', unsaved: false }, [], 'victim', now);
+    await mkdir(join(directory, project.key));
+    await writeFile(join(directory, project.key, 'alias.json'), JSON.stringify(victim), 'utf8');
+
+    await expect(store.rename(project.key, 'alias', 'overwritten')).rejects.toThrow('损坏');
+    await expect(store.read('project-b', 'victim')).resolves.toEqual(victim);
+  });
+
+  test('quarantines schema-invalid messages without exposing their content', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-conversations-'));
+    const store = new ConversationStore(directory);
+    const document = await store.create(project, [], 'invalid-schema', now);
+    const secretBody = 'schema-secret-body';
+    (document.messages as unknown[]) = [{ role: 'hacker', content: secretBody }];
+    await writeFile(join(directory, project.key, 'invalid-schema.json'), JSON.stringify(document), 'utf8');
+
+    await expect(store.list(project.key)).resolves.toEqual([]);
+    await expect(store.read(project.key, 'invalid-schema')).rejects.not.toThrow(secretBody);
+  });
+
+  test('uses collision-proof temporary files for concurrent writes', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-conversations-'));
+    const store = new ConversationStore(directory);
+    const first = await store.create(project, [], 'same', now);
+    const second = structuredClone(first);
+    first.title = 'first';
+    second.title = 'second';
+    vi.spyOn(Date, 'now').mockReturnValue(12345);
+
+    await expect(Promise.all([store.write(first), store.write(second)])).resolves.toBeDefined();
+    await expect(store.read(project.key, 'same')).resolves.toEqual(
+      expect.objectContaining({ title: expect.stringMatching(/^(first|second)$/) }),
+    );
+    expect((await readdir(join(directory, project.key))).some((name) => name.endsWith('.tmp'))).toBe(false);
+  });
+
+  test('concurrent lists isolate malformed JSON once and both continue', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-conversations-'));
+    const store = new ConversationStore(directory);
+    await mkdir(join(directory, project.key));
+    await writeFile(join(directory, project.key, 'broken.json'), '{bad', 'utf8');
+
+    await expect(Promise.all([store.list(project.key), store.list(project.key)])).resolves.toEqual([[], []]);
+    const corrupt = (await readdir(join(directory, project.key))).filter((name) => name.endsWith('.corrupt'));
+    expect(corrupt).toHaveLength(1);
   });
 
   test('preflights move conflicts and leaves every source conversation unchanged', async () => {
@@ -159,6 +263,76 @@ describe('ConversationStore', () => {
     await expect(store.read(project.key, 'c2')).resolves.toEqual(second);
     await expect(store.list('project-b')).resolves.toEqual([]);
   });
+
+  test('does not expose move reservations as conversation JSON', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-conversations-'));
+    const realFs = await import('node:fs/promises');
+    const seed = new ConversationStore(directory);
+    await seed.create(project, [], 'c1', now);
+    let entered!: () => void;
+    let release!: () => void;
+    const enteredPromise = new Promise<void>((resolve) => { entered = resolve; });
+    const releasePromise = new Promise<void>((resolve) => { release = resolve; });
+    vi.doMock('node:fs/promises', async () => ({
+      ...realFs,
+      rename: async (from: string, to: string) => {
+        if (from.endsWith('c1.json') && to.includes('project-b')) {
+          entered();
+          await releasePromise;
+        }
+        return realFs.rename(from, to);
+      },
+    }));
+    const { ConversationStore: PausedStore } = await import('../src/node/conversationStore');
+    const moving = new PausedStore(directory).moveProject(project.key, { key: 'project-b', label: 'B.aep', unsaved: false });
+    await enteredPromise;
+    const visibleDuringMove = await seed.list('project-b');
+    const namesDuringMove = await readdir(join(directory, 'project-b'));
+    release();
+    await moving;
+
+    expect(visibleDuringMove).toEqual([]);
+    expect(namesDuringMove.some((name) => name.endsWith('.json'))).toBe(false);
+  });
+
+  test('coordinates concurrent moves to the same target without losing the loser source', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-conversations-'));
+    const store = new ConversationStore(directory);
+    await store.create({ key: 'source-a', label: 'A.aep', unsaved: false }, [], 'same', now);
+    await store.create({ key: 'source-b', label: 'B.aep', unsaved: false }, [], 'same', now);
+    const target = { key: 'target', label: 'Target.aep', unsaved: false };
+
+    const results = await Promise.allSettled([
+      store.moveProject('source-a', target),
+      store.moveProject('source-b', target),
+    ]);
+
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1);
+    const remaining = [...await store.list('source-a'), ...await store.list('source-b')];
+    expect(remaining).toHaveLength(1);
+    await expect(store.read('target', 'same')).resolves.toEqual(expect.objectContaining({ project: target }));
+  });
+
+  test('reports move lock cleanup failures instead of reporting success', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-conversations-'));
+    const realFs = await import('node:fs/promises');
+    const seed = new ConversationStore(directory);
+    await seed.create(project, [], 'c1', now);
+    vi.doMock('node:fs/promises', async () => ({
+      ...realFs,
+      unlink: async (path: string) => {
+        if (path.endsWith('.move-reservation')) throw Object.assign(new Error('injected cleanup failure'), { code: 'EACCES' });
+        return realFs.unlink(path);
+      },
+    }));
+    const { ConversationStore: CleanupFailureStore } = await import('../src/node/conversationStore');
+
+    await expect(new CleanupFailureStore(directory).moveProject(
+      project.key,
+      { key: 'project-b', label: 'B.aep', unsaved: false },
+    )).rejects.toThrow(/EACCES|cleanup/i);
+  });
 });
 
 describe('CepRuntime conversation methods', () => {
@@ -202,5 +376,22 @@ describe('CepRuntime conversation methods', () => {
     expect((caught as Error).message).not.toContain(secret);
     expect((caught as Error).message).not.toContain('private body');
     await expect(readdir(join(directory, project.key))).rejects.toThrow();
+  });
+
+  test('redacts API key and token shapes from a failing Markdown filename', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-runtime-'));
+    const secret = 'sk-live-1234567890';
+    const missing = join(directory, `api_key=${secret}.md`);
+
+    let message = '';
+    try {
+      await createRuntime().createConversation(directory, project, [missing], 'c1', now);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+
+    expect(message).toContain('无法读取 Markdown');
+    expect(message).not.toContain(secret);
+    expect(message).toContain('[REDACTED]');
   });
 });
