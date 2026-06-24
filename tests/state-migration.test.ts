@@ -6,6 +6,8 @@ describe('state migration', () => {
     const migrated = migrateState({ profiles: [] });
     expect(migrated.activeSelections).toEqual({});
     expect(migrated.archiveDirectory).toBe('');
+    expect(migrated.conversationDataDirectory).toBe('');
+    expect(migrated.activeConversationId).toBe('');
     expect(migrated.contexts).toEqual([]);
     expect(migrated.tasks).toEqual([]);
     expect(migrated.chatMode).toBe('chat');
