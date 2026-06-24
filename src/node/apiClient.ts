@@ -9,6 +9,29 @@ function joinUrl(base: string, endpoint: string): string {
   return `${base.replace(/\/$/, '')}/${endpoint.replace(/^\//, '')}`;
 }
 
+type ChatEvent = { type: 'text'; text: string } | { type: 'usage'; input: number; output: number };
+type ChatAttempt = { events: ChatEvent[]; hasContent: boolean; hasReasoning: boolean };
+
+function parseChatSse(raw: string): ChatAttempt {
+  const events: ChatEvent[] = [];
+  let hasContent = false;
+  let hasReasoning = false;
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.startsWith('data:')) continue;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === '[DONE]') continue;
+    const event = JSON.parse(payload) as {
+      choices?: Array<{ delta?: { content?: string; reasoning_content?: string } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
+    const delta = event.choices?.[0]?.delta;
+    if (delta?.content) { hasContent = true; events.push({ type: 'text', text: delta.content }); }
+    if (delta?.reasoning_content) hasReasoning = true;
+    if (event.usage) events.push({ type: 'usage', input: event.usage.prompt_tokens ?? 0, output: event.usage.completion_tokens ?? 0 });
+  }
+  return { events, hasContent, hasReasoning };
+}
+
 export class ApiClient {
   private readonly fetcher: typeof fetch;
 
@@ -73,31 +96,33 @@ export class ApiClient {
     return String(taskId);
   }
 
-  async *streamChat(messages: Array<Pick<ChatMessage, 'role' | 'content'>>): AsyncGenerator<{ type: 'text'; text: string } | { type: 'usage'; input: number; output: number }> {
-    const config = this.profile.chat;
-    if (!config) throw new ApiError('该 API 档案未配置聊天能力');
+  private async chatAttempt(messages: Array<Pick<ChatMessage, 'role' | 'content'>>, includeResponseFormat: boolean): Promise<ChatAttempt> {
+    const config = this.profile.chat!;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.profile.timeoutMs);
     try {
       const response = await this.fetcher(joinUrl(this.profile.baseUrl, config.endpoint), {
         method: 'POST', signal: controller.signal,
         headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json', ...this.profile.headers },
-        body: JSON.stringify({ model: config.model, messages, stream: true, stream_options: { include_usage: true }, ...(config.structuredOutput === 'json_object' ? { response_format: { type: 'json_object' } } : {}) }),
+        body: JSON.stringify({ model: config.model, messages, stream: true, stream_options: { include_usage: true }, ...(includeResponseFormat ? { response_format: { type: 'json_object' } } : {}) }),
       });
       if (!response.ok) throw new ApiError(this.describeHttpError(response.status), response.status, await response.text());
-      const raw = await response.text();
-      for (const line of raw.split(/\r?\n/)) {
-        if (!line.startsWith('data:')) continue;
-        const payload = line.slice(5).trim();
-        if (!payload || payload === '[DONE]') continue;
-        const event = JSON.parse(payload) as { choices?: Array<{ delta?: { content?: string } }>; usage?: { prompt_tokens?: number; completion_tokens?: number } };
-        const text = event.choices?.[0]?.delta?.content;
-        if (text) yield { type: 'text', text };
-        if (event.usage) yield { type: 'usage', input: event.usage.prompt_tokens ?? 0, output: event.usage.completion_tokens ?? 0 };
-      }
+      return parseChatSse(await response.text());
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  async *streamChat(messages: Array<Pick<ChatMessage, 'role' | 'content'>>): AsyncGenerator<ChatEvent> {
+    const config = this.profile.chat;
+    if (!config) throw new ApiError('该 API 档案未配置聊天能力');
+    const jsonMode = config.structuredOutput === 'json_object';
+    let attempt = await this.chatAttempt(messages, jsonMode);
+    if (!attempt.hasContent && jsonMode) attempt = await this.chatAttempt(messages, false);
+    if (!attempt.hasContent) {
+      throw new ApiError(jsonMode ? '模型连续返回空内容，请重试或将结构化输出改为纯提示词' : '模型没有返回内容，请重试');
+    }
+    for (const event of attempt.events) yield event;
   }
 
   async generateImage(prompt: string, options: { size: string }): Promise<{ kind: 'url' | 'base64'; value: string }> {

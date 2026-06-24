@@ -67,3 +67,50 @@ describe('API client', () => {
     await expect(client.getVideoStatus('task-7')).resolves.toEqual({ state: 'ready', url: 'https://cdn.test/video.mp4' });
   });
 });
+
+async function collect(client: ApiClient) {
+  const events = [];
+  for await (const event of client.streamChat([{ role: 'user', content: '创建圆形' }])) events.push(event);
+  return events;
+}
+
+test('retries an empty JSON response once without response_format', async () => {
+  const bodies: Array<Record<string, unknown>> = [];
+  const responses = [
+    'data: {"choices":[{"delta":{"reasoning_content":"分析中"}}]}\n\ndata: [DONE]\n\n',
+    'data: {"choices":[{"delta":{"content":"{\\"kind\\":\\"chat\\",\\"message\\":\\"好了\\"}"}}]}\n\ndata: [DONE]\n\n',
+  ];
+  const fetcher: typeof fetch = async (_url, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return new Response(responses.shift(), { status: 200 });
+  };
+  await expect(collect(new ApiClient(profile, 'secret', fetcher))).resolves.toEqual([
+    { type: 'text', text: '{"kind":"chat","message":"好了"}' },
+  ]);
+  expect(bodies).toHaveLength(2);
+  expect(bodies[0]).toHaveProperty('response_format');
+  expect(bodies[1]).not.toHaveProperty('response_format');
+});
+
+test('does not retry a non-empty first response', async () => {
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls += 1;
+    return new Response('data: {"choices":[{"delta":{"content":"正常"}}]}\n\ndata: [DONE]\n\n');
+  };
+  await expect(collect(new ApiClient(profile, 'secret', fetcher))).resolves.toEqual([{ type: 'text', text: '正常' }]);
+  expect(calls).toBe(1);
+});
+
+test('rejects after two empty JSON responses', async () => {
+  const fetcher: typeof fetch = async () => new Response('data: {"choices":[{"delta":{"reasoning_content":"仍在想"}}]}\n\ndata: [DONE]\n\n');
+  await expect(collect(new ApiClient(profile, 'secret', fetcher))).rejects.toThrow('模型连续返回空内容');
+});
+
+test('does not retry an empty prompt-only response', async () => {
+  const promptOnly = { ...profile, chat: { ...profile.chat!, structuredOutput: 'prompt_only' as const } };
+  let calls = 0;
+  const fetcher: typeof fetch = async () => { calls += 1; return new Response('data: [DONE]\n\n'); };
+  await expect(collect(new ApiClient(promptOnly, 'secret', fetcher))).rejects.toThrow('模型没有返回内容');
+  expect(calls).toBe(1);
+});
