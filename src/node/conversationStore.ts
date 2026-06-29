@@ -225,15 +225,38 @@ export class ConversationStore {
   async moveProject(fromKey: string, project: ProjectIdentity): Promise<void> {
     assertPathSegment(fromKey, '项目标识');
     assertPathSegment(project.key, '项目标识');
+    const root = await this.safeRoot();
     if (fromKey === project.key) {
-      for (const document of await this.documentsForProject(fromKey)) {
-        await this.write({ ...document, project: { ...project } });
-      }
+      const candidates = await this.documentsForProject(fromKey);
+      if (candidates.length === 0) return;
+      await serializeDocumentOperation(
+        candidates.map((document) => this.documentQueueKey(root, fromKey, document.id)),
+        async () => {
+          const candidateIds = new Set(candidates.map((document) => document.id));
+          const latest = (await this.documentsForProject(fromKey)).filter((document) => candidateIds.has(document.id));
+          for (const document of latest) await this.writeDocument({ ...document, project: { ...project } }, false);
+        },
+      );
       return;
     }
 
-    const originals = await this.documentsForProject(fromKey);
-    if (originals.length === 0) return;
+    const candidates = await this.documentsForProject(fromKey);
+    if (candidates.length === 0) return;
+    await serializeDocumentOperation(
+      candidates.flatMap((document) => [
+        this.documentQueueKey(root, fromKey, document.id),
+        this.documentQueueKey(root, project.key, document.id),
+      ]),
+      async () => {
+        const candidateIds = new Set(candidates.map((document) => document.id));
+        const originals = (await this.documentsForProject(fromKey)).filter((document) => candidateIds.has(document.id));
+        if (originals.length === 0) return;
+        await this.moveProjectDocuments(fromKey, project, originals);
+      },
+    );
+  }
+
+  private async moveProjectDocuments(fromKey: string, project: ProjectIdentity, originals: ConversationDocument[]): Promise<void> {
     const sourceDirectory = await this.safeProjectDirectory(fromKey, 'existing');
     const targetDirectory = await this.safeProjectDirectory(project.key, 'create');
     if (!sourceDirectory || !targetDirectory) throw new Error('移动会话失败：ENOENT');

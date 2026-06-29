@@ -373,6 +373,54 @@ describe('ConversationStore', () => {
     await expect(seed.read(project.key, 'same')).rejects.toThrow();
   });
 
+  test('serializes a move with a source write that already passed the missing-lock check', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-conversations-'));
+    const realFs = await import('node:fs/promises');
+    const seed = new ConversationStore(directory);
+    const original = await seed.create(project, [], 'same', now);
+    const sourceDirectory = join(directory, project.key);
+    let entered!: () => void;
+    let release!: () => void;
+    const enteredPromise = new Promise<void>((resolve) => { entered = resolve; });
+    const releasePromise = new Promise<void>((resolve) => { release = resolve; });
+    vi.doMock('node:fs/promises', async () => ({
+      ...realFs,
+      open: async (path: string, flags?: string | number) => {
+        if (path.startsWith(join(sourceDirectory, 'same.json.')) && path.endsWith('.tmp')) {
+          entered();
+          await releasePromise;
+        }
+        return realFs.open(path, flags as never);
+      },
+    }));
+    const { ConversationStore: RacingStore } = await import('../src/node/conversationStore');
+    const store = new RacingStore(directory);
+    const updated = structuredClone(original);
+    updated.title = 'write after missing source lock check';
+    updated.updatedAt = '2026-06-24T11:00:00.000Z';
+
+    const writing = store.write(updated);
+    await enteredPromise;
+    let moveSettled = false;
+    const moving = store.moveProject(project.key, { key: 'project-b', label: 'B.aep', unsaved: false });
+    moving.then(
+      () => { moveSettled = true; },
+      () => { moveSettled = true; },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(moveSettled).toBe(false);
+    release();
+
+    await expect(Promise.all([writing, moving])).resolves.toBeDefined();
+    await expect(seed.read('project-b', 'same')).resolves.toEqual(
+      expect.objectContaining({
+        title: 'write after missing source lock check',
+        project: { key: 'project-b', label: 'B.aep', unsaved: false },
+      }),
+    );
+    await expect(seed.read(project.key, 'same')).rejects.toThrow();
+  });
+
   test('removes a stale source move reservation before allowing a write', async () => {
     directory = await mkdtemp(join(tmpdir(), 'ae-ai-conversations-'));
     const store = new ConversationStore(directory);
