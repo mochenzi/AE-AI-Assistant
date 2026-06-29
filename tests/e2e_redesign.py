@@ -29,8 +29,9 @@ with sync_playwright() as p:
     page.wait_for_load_state("networkidle")
     expect(page.locator(".mode-control.ae")).to_have_text("操作 AE")
 
+    page.locator(".codex-composer textarea").fill("测试发送按钮动效")
     send = page.locator("button.send")
-    send.evaluate("el => el.removeAttribute('disabled')")
+    expect(send).to_be_enabled()
     box = send.bounding_box()
     page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
     page.mouse.down()

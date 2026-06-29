@@ -19,6 +19,8 @@ Validation:
 - `npm run build` -> PASS.
 - `python -m py_compile tests/e2e_conversations.py` -> PASS.
 - `python tests/e2e_conversations.py` with `npm run dev -- --host 127.0.0.1` -> PASS.
+- Follow-up: removed the same disabled-button DOM hack from `tests/e2e_redesign.py`; it now fills the composer and asserts the send button is enabled before checking the press animation.
+- `python -m py_compile tests/e2e_redesign.py tests/e2e_conversations.py` -> PASS.
 
 Concerns:
 - `npm test` emits the existing React `act(...)` environment warning in the new drawer test, but the test suite passes.
