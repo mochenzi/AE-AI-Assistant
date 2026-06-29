@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { migrateState } from '../src/shared/stateMigration';
 import { createConversationDocument } from '../src/shared/conversationWorkspace';
+import { convertLegacyConversations, persistLegacyConversations } from '../src/shared/conversationMigration';
 
 describe('state migration', () => {
   test('adds new state fields to a partial legacy state', () => {
@@ -78,5 +79,91 @@ describe('state migration', () => {
     );
 
     expect(migrateState({ conversations: [external] }).conversations).toEqual([]);
+  });
+
+  test('keeps legacy conversations in app state until an external directory is selected', async () => {
+    const project = { key: 'project-key', label: 'Project.aep', unsaved: false };
+    const state = migrateState({
+      conversations: [
+        {
+          id: 'legacy-c1',
+          title: 'Legacy conversation',
+          messages: [{ role: 'user', content: 'hello' }],
+          contextProfileIds: ['ctx-1'],
+          archived: true,
+          createdAt: '2026-06-23T00:00:00.000Z',
+          handoffSummary: 'handoff note',
+        },
+      ],
+      contexts: [
+        {
+          id: 'ctx-1',
+          name: 'Context one',
+          content: 'context body',
+          updatedAt: '2026-06-22T00:00:00.000Z',
+        },
+      ],
+      activeConversationId: 'legacy-c1',
+    });
+
+    expect(state.conversationDataDirectory).toBe('');
+    expect(state.conversations).toHaveLength(1);
+
+    const documents = convertLegacyConversations(
+      state.conversations,
+      project,
+      state.contexts,
+      '2026-06-24T00:00:00.000Z',
+    );
+    expect(documents[0].messages).toEqual(state.conversations[0].messages);
+    expect(documents[0]).toMatchObject({
+      id: 'legacy-c1',
+      project,
+      title: 'Legacy conversation',
+      contextProfileIds: ['ctx-1'],
+      archived: true,
+      handoffSummary: 'handoff note',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-24T00:00:00.000Z',
+    });
+
+    const events: string[] = [];
+    await persistLegacyConversations(
+      documents,
+      async () => { events.push('write'); },
+      async () => { events.push('clear'); },
+    );
+    expect(events).toEqual(['write', 'clear']);
+  });
+
+  test('does not clear legacy conversations when an external write fails', async () => {
+    const documents = convertLegacyConversations(
+      [
+        {
+          id: 'legacy-c1',
+          title: 'Legacy conversation',
+          messages: [{ role: 'user', content: 'hello' }],
+          contextProfileIds: [],
+          archived: false,
+          createdAt: '2026-06-23T00:00:00.000Z',
+        },
+      ],
+      { key: 'project-key', label: 'Project.aep', unsaved: false },
+      [],
+      '2026-06-24T00:00:00.000Z',
+    );
+    const events: string[] = [];
+
+    await expect(
+      persistLegacyConversations(
+        documents,
+        async () => {
+          events.push('write');
+          throw new Error('disk full');
+        },
+        async () => { events.push('clear'); },
+      ),
+    ).rejects.toThrow('disk full');
+    expect(events).toEqual(['write']);
   });
 });

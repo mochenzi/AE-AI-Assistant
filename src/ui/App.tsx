@@ -84,6 +84,10 @@ import {
   type ConversationSummary,
   type ProjectIdentity,
 } from "../shared/conversationWorkspace";
+import {
+  convertLegacyConversations,
+  persistLegacyConversations,
+} from "../shared/conversationMigration";
 
 type Tab = "chat" | "media" | "templates" | "api" | "history";
 const tabs: Array<{ id: Tab; label: string; icon: typeof Bot }> = [
@@ -211,6 +215,7 @@ export function App() {
               <HistoryPage
                 state={state}
                 update={update}
+                project={project!}
                 setNotice={setNotice}
               />
             )}
@@ -449,6 +454,40 @@ function ChatPage({
     runtime.writeConversation(conversationDirectory, next).catch((error) => setNotice((error as Error).message));
   }, [activeDocument, conversationDirectory, currentChatChoice, runtime, selectedContextIds, setNotice, state.chatMode]);
 
+  async function saveConversationDirectory(directory: string): Promise<void> {
+    const current = latestState.current;
+    if (!current.conversations.length) {
+      const nextState = {
+        ...current,
+        conversationDataDirectory: directory,
+        activeConversationId: "",
+      };
+      await runtime.saveState(nextState);
+      update(() => nextState);
+      return;
+    }
+
+    const documents = convertLegacyConversations(current.conversations, projectId, current.contexts, now());
+    await persistLegacyConversations(
+      documents,
+      (document) => runtime.writeConversation(directory, document),
+      async () => {
+        const activeConversationId = current.activeConversationId &&
+          documents.some((document) => document.id === current.activeConversationId)
+          ? current.activeConversationId
+          : documents[0]?.id ?? "";
+        const nextState = {
+          ...current,
+          conversationDataDirectory: directory,
+          conversations: [],
+          activeConversationId,
+        };
+        await runtime.saveState(nextState);
+        update(() => nextState);
+      },
+    );
+  }
+
   async function ensureConversationDirectory(): Promise<string | null> {
     if (state.conversationDataDirectory) return state.conversationDataDirectory;
     const directory = hostBridge.isCep()
@@ -458,9 +497,14 @@ function ChatPage({
       setNotice("未选择对话数据目录");
       return null;
     }
-    await runtime.assertConversationDirectory(directory);
-    update((current) => ({ ...current, conversationDataDirectory: directory }));
-    return directory;
+    try {
+      await runtime.assertConversationDirectory(directory);
+      await saveConversationDirectory(directory);
+      return directory;
+    } catch (error) {
+      setNotice((error as Error).message);
+      return null;
+    }
   }
 
   async function createConversation(markdownPaths = newMarkdownPaths): Promise<ConversationDocument | null> {
@@ -2639,10 +2683,12 @@ function ApiPage({
 function HistoryPage({
   state,
   update,
+  project,
   setNotice,
 }: {
   state: AppState;
   update: (fn: (s: AppState) => AppState) => void;
+  project: ProjectContext;
   setNotice: (s: string) => void;
 }) {
   const totals = Object.values(state.tokenTotals).reduce(
@@ -2674,7 +2720,32 @@ function HistoryPage({
         state.conversationDataDirectory !== directory &&
         !confirm("只切换新加载的对话数据目录；不会复制、删除或迁移旧目录。继续？")
       ) return;
-      update((s) => ({ ...s, conversationDataDirectory: directory, activeConversationId: "" }));
+      if (state.conversations.length) {
+        const identity = projectIdentity(project.projectPath, project.projectName);
+        const documents = convertLegacyConversations(state.conversations, identity, state.contexts, now());
+        await persistLegacyConversations(
+          documents,
+          (document) => getRuntime().writeConversation(directory, document),
+          async () => {
+            const activeConversationId = state.activeConversationId &&
+              documents.some((document) => document.id === state.activeConversationId)
+              ? state.activeConversationId
+              : documents[0]?.id ?? "";
+            const nextState = {
+              ...state,
+              conversationDataDirectory: directory,
+              conversations: [],
+              activeConversationId,
+            };
+            await getRuntime().saveState(nextState);
+            update(() => nextState);
+          },
+        );
+      } else {
+        const nextState = { ...state, conversationDataDirectory: directory, activeConversationId: "" };
+        await getRuntime().saveState(nextState);
+        update(() => nextState);
+      }
       setNotice(`对话数据目录已切换到：${directory}`);
     } catch (error) {
       setNotice((error as Error).message);
