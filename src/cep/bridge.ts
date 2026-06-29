@@ -31,7 +31,7 @@ const fallbackProject: ProjectContext = {
   projectName: '开发预览工程.aep',
   projectPath: '',
   revision: 'preview|1|3|',
-  activeComp: { id: 1, name: 'Main', width: 1920, height: 1080, duration: 10, frameRate: 25, layerCount: 3 },
+  activeComp: { id: 1, name: 'Main', width: 1920, height: 1080, duration: 10, frameRate: 25, layerCount: 2 },
   selectedLayers: [],
 };
 
