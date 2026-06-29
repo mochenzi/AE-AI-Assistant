@@ -12,6 +12,16 @@ import {
 
 type DirectoryMode = 'create' | 'existing' | 'optional';
 const writeQueues = new Map<string, Promise<void>>();
+const activeMoveOwners = new Set<string>();
+
+type MoveReservation = {
+  owner: string;
+  id: string;
+  sourceKey: string;
+  targetKey: string;
+  createdAt: string;
+  stage: string;
+};
 
 function errorCode(error: unknown): string {
   if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string') return error.code;
@@ -20,6 +30,16 @@ function errorCode(error: unknown): string {
 
 function hasCode(error: unknown, code: string): boolean {
   return Boolean(error && typeof error === 'object' && 'code' in error && error.code === code);
+}
+
+function isMoveConflict(error: unknown): boolean {
+  return error instanceof Error && /冲突|鍐|conflict/i.test(error.message);
+}
+
+async function waitForMoveOwner(owner: string): Promise<void> {
+  while (activeMoveOwners.has(owner)) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
 }
 
 function safePathError(error: unknown): Error & { code: string } {
@@ -86,25 +106,49 @@ function isConversationDocument(value: unknown): value is ConversationDocument {
   return value.handoffSummary === undefined || typeof value.handoffSummary === 'string';
 }
 
+function isMoveReservation(value: unknown): value is MoveReservation {
+  return isRecord(value)
+    && typeof value.owner === 'string'
+    && typeof value.id === 'string'
+    && typeof value.sourceKey === 'string'
+    && typeof value.targetKey === 'string'
+    && typeof value.createdAt === 'string'
+    && typeof value.stage === 'string';
+}
+
 function isInside(root: string, candidate: string): boolean {
   const pathFromRoot = relative(root, candidate);
   return pathFromRoot === '' || (!pathFromRoot.startsWith('..') && !isAbsolute(pathFromRoot));
 }
 
-async function serializeTargetWrite<T>(target: string, operation: () => Promise<T>): Promise<T> {
-  const key = process.platform === 'win32' ? target.toLocaleLowerCase() : target;
-  const previous = writeQueues.get(key) ?? Promise.resolve();
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => { release = resolve; });
-  const tail = previous.then(() => gate);
-  writeQueues.set(key, tail);
-  await previous;
+function normalizeQueueKey(key: string): string {
+  return process.platform === 'win32' ? key.toLocaleLowerCase() : key;
+}
+
+async function serializeDocumentOperation<T>(keys: string[], operation: () => Promise<T>): Promise<T> {
+  const normalized = [...new Set(keys.map(normalizeQueueKey))].sort();
+  const acquired: Array<{ key: string; tail: Promise<void>; release: () => void }> = [];
   try {
+    for (const key of normalized) {
+      const previous = writeQueues.get(key) ?? Promise.resolve();
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const tail = previous.then(() => gate);
+      writeQueues.set(key, tail);
+      await previous;
+      acquired.push({ key, tail, release });
+    }
     return await operation();
   } finally {
-    release();
-    if (writeQueues.get(key) === tail) writeQueues.delete(key);
+    for (const item of acquired.reverse()) {
+      item.release();
+      if (writeQueues.get(item.key) === item.tail) writeQueues.delete(item.key);
+    }
   }
+}
+
+function normalizeSearchText(value: string): string {
+  return value.normalize('NFKC').toLocaleLowerCase().replace(/ß/g, 'ss');
 }
 
 export class ConversationStore {
@@ -145,7 +189,10 @@ export class ConversationStore {
 
   async write(document: ConversationDocument): Promise<void> {
     if (!isConversationDocument(document)) throw new Error('无效的会话文档');
-    await this.writeDocument(document, false);
+    const root = await this.safeRoot();
+    await serializeDocumentOperation([this.documentQueueKey(root, document.project.key, document.id)], async () => {
+      await this.writeDocument(document, false);
+    });
   }
 
   async list(projectKey?: string): Promise<ConversationSummary[]> {
@@ -155,14 +202,14 @@ export class ConversationStore {
   }
 
   async search(query: string): Promise<ConversationSummary[]> {
-    const needle = query.trim().toLocaleLowerCase();
+    const needle = normalizeSearchText(query.trim());
     const documents = await this.allDocuments();
     const matches = needle
       ? documents.filter((document) => [
         document.title,
         document.project.label,
         ...document.messages.map((message) => message.content),
-      ].some((text) => text.toLocaleLowerCase().includes(needle)))
+      ].some((text) => normalizeSearchText(text).includes(needle)))
       : documents;
     return matches.map(summarizeConversation).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   }
@@ -191,12 +238,26 @@ export class ConversationStore {
     const targetDirectory = await this.safeProjectDirectory(project.key, 'create');
     if (!sourceDirectory || !targetDirectory) throw new Error('移动会话失败：ENOENT');
 
+    const owner = randomUUID();
+    const sourceLocks: string[] = [];
     const locks: string[] = [];
     try {
       for (const document of originals) {
         const lock = this.moveLockPath(targetDirectory, document.id);
+        const reservation: MoveReservation = {
+          owner,
+          id: document.id,
+          sourceKey: fromKey,
+          targetKey: project.key,
+          createdAt: new Date().toISOString(),
+          stage: 'reserved',
+        };
         try {
-          await writeFile(lock, randomUUID(), { encoding: 'utf8', flag: 'wx' });
+          await this.recoverReservationForDocument(sourceDirectory, document.id);
+          const sourceLock = this.moveLockPath(sourceDirectory, document.id);
+          await writeFile(sourceLock, JSON.stringify(reservation), { encoding: 'utf8', flag: 'wx' });
+          sourceLocks.push(sourceLock);
+          await writeFile(lock, JSON.stringify(reservation), { encoding: 'utf8', flag: 'wx' });
           locks.push(lock);
         } catch (error) {
           if (hasCode(error, 'EEXIST')) throw new Error('移动会话冲突');
@@ -210,7 +271,11 @@ export class ConversationStore {
         }
       }
     } catch (error) {
-      const cleanupErrors = await this.cleanupOwnedPaths(locks);
+      const cleanupErrors = await this.cleanupOwnedPaths([...locks, ...sourceLocks]);
+      if (isMoveConflict(error)) {
+        const conflictCleanup = cleanupErrors.length ? ` cleanup: ${cleanupErrors.join(',')}` : '';
+        throw new Error(`${(error as Error).message}${conflictCleanup}`);
+      }
       const cleanup = cleanupErrors.length ? `；cleanup: ${cleanupErrors.join(',')}` : '';
       if (error instanceof Error && error.message.includes('冲突')) throw new Error(`${error.message}${cleanup}`);
       throw new Error(`移动会话失败：${errorCode(error)}${cleanup}`);
@@ -218,6 +283,7 @@ export class ConversationStore {
 
     const moved: ConversationDocument[] = [];
     let operationError: unknown;
+    activeMoveOwners.add(owner);
     try {
       for (const document of originals) {
         const source = join(sourceDirectory, `${document.id}.json`);
@@ -232,11 +298,14 @@ export class ConversationStore {
         moved.push(document);
       }
       for (const document of originals) {
-        await this.writeDocument({ ...document, project: { ...project } }, true);
+        const target = join(targetDirectory, `${document.id}.json`);
+        const latest = await this.readDocumentAt(target);
+        await this.writeDocument({ ...(latest ?? document), project: { ...project } }, true);
       }
     } catch (error) {
       operationError = error;
     }
+    activeMoveOwners.delete(owner);
 
     if (operationError) {
       const rollbackErrors: string[] = [];
@@ -256,7 +325,15 @@ export class ConversationStore {
           rollbackErrors.push(errorCode(rollbackError));
         }
       }
-      rollbackErrors.push(...await this.cleanupOwnedPaths(locks));
+      rollbackErrors.push(...await this.cleanupOwnedPaths([...locks, ...sourceLocks]));
+      if (isMoveConflict(operationError)) {
+        const conflictCleanup = rollbackErrors.length ? ` cleanup: ${rollbackErrors.join(',')}` : '';
+        throw new Error(`${(operationError as Error).message}${conflictCleanup}`);
+      }
+      if (operationError instanceof Error && operationError.message.includes('鍐茬獊')) {
+        const conflictCleanup = rollbackErrors.length ? ` cleanup: ${rollbackErrors.join(',')}` : '';
+        throw new Error(`${operationError.message}${conflictCleanup}`);
+      }
       const rollback = rollbackErrors.length ? `；rollback: ${rollbackErrors.join(',')}` : '';
       throw new Error(`移动会话失败：${errorCode(operationError)}${rollback}`);
     }
@@ -327,6 +404,10 @@ export class ConversationStore {
     if (!directory) throw new Error('无法写入会话：ENOENT');
     const target = join(directory, `${document.id}.json`);
     if (!ignoreMoveLock) {
+      const redirected = await this.resolveWriteReservation(directory, document);
+      if (redirected) {
+        return this.writeDocument(redirected.document, true);
+      }
       try {
         await lstat(this.moveLockPath(directory, document.id));
         throw new Error('无法写入会话：移动中');
@@ -334,7 +415,7 @@ export class ConversationStore {
         if (!hasCode(error, 'ENOENT')) throw error;
       }
     }
-    await serializeTargetWrite(target, async () => {
+    {
       const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
       let handle: Awaited<ReturnType<typeof open>> | undefined;
       let created = false;
@@ -353,7 +434,7 @@ export class ConversationStore {
         if (error instanceof Error && error.message.includes('无法写入会话')) throw error;
         throw new Error(`无法写入会话：${errorCode(error)}`);
       }
-    });
+    }
   }
 
   private async allDocuments(projectKey?: string): Promise<ConversationDocument[]> {
@@ -365,8 +446,12 @@ export class ConversationStore {
 
   private async projectKeys(): Promise<string[]> {
     const root = await this.safeRoot();
-    const entries = await readdir(root, { withFileTypes: true });
-    return entries.filter((entry) => entry.isDirectory() && !entry.isSymbolicLink()).map((entry) => entry.name);
+    try {
+      const entries = await readdir(root, { withFileTypes: true });
+      return entries.filter((entry) => entry.isDirectory() && !entry.isSymbolicLink()).map((entry) => entry.name);
+    } catch (error) {
+      throw new Error(`鏃犳硶鍒楀嚭浼氳瘽锛?${errorCode(error)}`);
+    }
   }
 
   private async documentsForProject(projectKey: string): Promise<ConversationDocument[]> {
@@ -393,6 +478,7 @@ export class ConversationStore {
     const path = join(directory, `${id}.json`);
     let raw: string;
     try {
+      await this.recoverReservationForDocument(directory, id);
       raw = await readFile(path, 'utf8');
       await this.safeProjectDirectory(projectKey, 'existing');
     } catch (error) {
@@ -432,6 +518,107 @@ export class ConversationStore {
 
   private moveLockPath(directory: string, id: string): string {
     return join(directory, `${id}.json.move-reservation`);
+  }
+
+  private documentQueueKey(root: string, projectKey: string, id: string): string {
+    return `${root}\0${projectKey}\0${id}`;
+  }
+
+  private async readReservation(path: string): Promise<MoveReservation | undefined> {
+    let raw: string;
+    try {
+      raw = await readFile(path, 'utf8');
+    } catch (error) {
+      if (hasCode(error, 'ENOENT')) return undefined;
+      throw error;
+    }
+    try {
+      const value: unknown = JSON.parse(raw);
+      if (isMoveReservation(value)) return value;
+    } catch {
+      // handled below
+    }
+    throw new Error('Cannot recover conversation move: invalid reservation');
+  }
+
+  private async readDocumentAt(path: string): Promise<ConversationDocument | undefined> {
+    try {
+      const value: unknown = JSON.parse(await readFile(path, 'utf8'));
+      return isConversationDocument(value) ? value : undefined;
+    } catch (error) {
+      if (hasCode(error, 'ENOENT')) return undefined;
+      throw error;
+    }
+  }
+
+  private async recoverReservationForDocument(directory: string, id: string): Promise<void> {
+    const reservationPath = this.moveLockPath(directory, id);
+    const reservation = await this.readReservation(reservationPath);
+    if (!reservation) return;
+    if (activeMoveOwners.has(reservation.owner)) throw new Error('Cannot recover conversation move: move in progress');
+
+    const root = await this.safeRoot();
+    const sourceDirectory = join(root, reservation.sourceKey);
+    const targetDirectory = join(root, reservation.targetKey);
+    const sourcePath = join(sourceDirectory, `${reservation.id}.json`);
+    const targetPath = join(targetDirectory, `${reservation.id}.json`);
+    const source = await this.readDocumentAt(sourcePath);
+    const target = await this.readDocumentAt(targetPath);
+
+    if (source && !target) {
+      await this.cleanupOwnedPaths([reservationPath]);
+      return;
+    }
+    if (!source && target?.project.key === reservation.targetKey && target.id === reservation.id) {
+      await this.cleanupOwnedPaths([reservationPath]);
+      return;
+    }
+    if (!source && target?.project.key === reservation.sourceKey && target.id === reservation.id) {
+      await mkdir(sourceDirectory).catch((error) => {
+        if (!hasCode(error, 'EEXIST')) throw error;
+      });
+      await rename(targetPath, sourcePath);
+      await this.cleanupOwnedPaths([reservationPath, this.moveLockPath(sourceDirectory, id)]);
+      return;
+    }
+    throw new Error('Cannot recover conversation move: conflicting reservation state');
+  }
+
+  private async resolveWriteReservation(directory: string, document: ConversationDocument): Promise<{ document: ConversationDocument } | undefined> {
+    const reservationPath = this.moveLockPath(directory, document.id);
+    const reservation = await this.readReservation(reservationPath);
+    if (!reservation) return undefined;
+    if (activeMoveOwners.has(reservation.owner)) await waitForMoveOwner(reservation.owner);
+    if (activeMoveOwners.has(reservation.owner)) throw new Error('鏃犳硶鍐欏叆浼氳瘽锛氱Щ鍔ㄤ腑');
+
+    const root = await this.safeRoot();
+    const sourceDirectory = join(root, reservation.sourceKey);
+    const targetDirectory = join(root, reservation.targetKey);
+    const sourcePath = join(sourceDirectory, `${reservation.id}.json`);
+    const targetPath = join(targetDirectory, `${reservation.id}.json`);
+    const source = await this.readDocumentAt(sourcePath);
+    const target = await this.readDocumentAt(targetPath);
+
+    if (source && !target) {
+      await this.cleanupOwnedPaths([reservationPath]);
+      return undefined;
+    }
+    if (!source && target?.project.key === reservation.targetKey && target.id === reservation.id) {
+      await this.cleanupOwnedPaths([reservationPath]);
+      if (document.project.key === reservation.sourceKey) {
+        return { document: { ...document, project: { ...target.project } } };
+      }
+      return undefined;
+    }
+    if (!source && target?.project.key === reservation.sourceKey && target.id === reservation.id) {
+      await mkdir(sourceDirectory).catch((error) => {
+        if (!hasCode(error, 'EEXIST')) throw error;
+      });
+      await rename(targetPath, sourcePath);
+      await this.cleanupOwnedPaths([reservationPath, this.moveLockPath(sourceDirectory, document.id)]);
+      return undefined;
+    }
+    throw new Error('Cannot recover conversation move: conflicting reservation state');
   }
 
   private async cleanupOwnedPaths(paths: string[]): Promise<string[]> {

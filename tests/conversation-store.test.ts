@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { ConversationStore } from '../src/node/conversationStore';
@@ -225,11 +225,14 @@ describe('ConversationStore', () => {
     const targetProject = { key: 'project-b', label: 'B.aep', unsaved: false };
     const target = await seed.create(targetProject, [], 'same', '2026-06-24T10:00:00.000Z');
     const targetPath = join(directory, targetProject.key, 'same.json');
+    let targetChecks = 0;
     vi.doMock('node:fs/promises', async () => ({
       ...realFs,
-      stat: async (path: string) => {
-        if (path === targetPath) throw Object.assign(new Error('simulated stale preflight'), { code: 'ENOENT' });
-        return realFs.stat(path);
+      lstat: async (path: string) => {
+        if (path === targetPath && ++targetChecks === 1) {
+          throw Object.assign(new Error('simulated stale preflight'), { code: 'ENOENT' });
+        }
+        return realFs.lstat(path);
       },
     }));
     const { ConversationStore: RacingStore } = await import('../src/node/conversationStore');
@@ -333,6 +336,117 @@ describe('ConversationStore', () => {
       { key: 'project-b', label: 'B.aep', unsaved: false },
     )).rejects.toThrow(/EACCES|cleanup/i);
   });
+
+  test('serializes a move with a normal source write so the newest source document is moved once', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-conversations-'));
+    const realFs = await import('node:fs/promises');
+    const seed = new ConversationStore(directory);
+    const original = await seed.create(project, [], 'same', now);
+    let entered!: () => void;
+    let release!: () => void;
+    const enteredPromise = new Promise<void>((resolve) => { entered = resolve; });
+    const releasePromise = new Promise<void>((resolve) => { release = resolve; });
+    vi.doMock('node:fs/promises', async () => ({
+      ...realFs,
+      rename: async (from: string, to: string) => {
+        if (from.endsWith('same.json') && to.includes('project-b')) {
+          entered();
+          await releasePromise;
+        }
+        return realFs.rename(from, to);
+      },
+    }));
+    const { ConversationStore: RacingStore } = await import('../src/node/conversationStore');
+    const store = new RacingStore(directory);
+    const moving = store.moveProject(project.key, { key: 'project-b', label: 'B.aep', unsaved: false });
+    await enteredPromise;
+    const updated = structuredClone(original);
+    updated.title = 'latest source write';
+    updated.updatedAt = '2026-06-24T11:00:00.000Z';
+    const writing = store.write(updated);
+    release();
+
+    await expect(Promise.all([moving, writing])).resolves.toBeDefined();
+    await expect(seed.read('project-b', 'same')).resolves.toEqual(
+      expect.objectContaining({ title: 'latest source write', project: { key: 'project-b', label: 'B.aep', unsaved: false } }),
+    );
+    await expect(seed.read(project.key, 'same')).rejects.toThrow();
+  });
+
+  test('removes a stale source move reservation before allowing a write', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-conversations-'));
+    const store = new ConversationStore(directory);
+    const document = await store.create(project, [], 'c1', now);
+    const reservation = {
+      owner: 'stale-owner',
+      id: 'c1',
+      sourceKey: project.key,
+      targetKey: 'project-b',
+      createdAt: '2026-06-24T08:01:00.000Z',
+      stage: 'reserved',
+    };
+    await writeFile(join(directory, project.key, 'c1.json.move-reservation'), JSON.stringify(reservation), 'utf8');
+    document.title = 'write after stale reservation';
+
+    await expect(store.write(document)).resolves.toBeUndefined();
+
+    await expect(readFile(join(directory, project.key, 'c1.json.move-reservation'), 'utf8')).rejects.toThrow();
+    await expect(store.read(project.key, 'c1')).resolves.toEqual(expect.objectContaining({ title: 'write after stale reservation' }));
+  });
+
+  test('rolls back a stale target file whose identity still points at the source', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-conversations-'));
+    const store = new ConversationStore(directory);
+    const source = await store.create(project, [], 'c1', now);
+    await mkdir(join(directory, 'project-b'));
+    await rename(join(directory, project.key, 'c1.json'), join(directory, 'project-b', 'c1.json'));
+    const reservation = {
+      owner: 'stale-owner',
+      id: 'c1',
+      sourceKey: project.key,
+      targetKey: 'project-b',
+      createdAt: '2026-06-24T08:01:00.000Z',
+      stage: 'renamed',
+    };
+    await writeFile(join(directory, 'project-b', 'c1.json.move-reservation'), JSON.stringify(reservation), 'utf8');
+
+    await expect(store.list('project-b')).resolves.toEqual([]);
+    await expect(store.read(project.key, 'c1')).resolves.toEqual(source);
+    await expect(readFile(join(directory, 'project-b', 'c1.json.move-reservation'), 'utf8')).rejects.toThrow();
+  });
+
+  test('folds Unicode variants while searching conversations', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-conversations-'));
+    const store = new ConversationStore(directory);
+    const first = await store.create(project, [], 'eszett', now);
+    first.title = 'Straße';
+    await store.write(first);
+    const second = await store.create(project, [], 'wide', '2026-06-24T09:00:00.000Z');
+    second.messages.push({ role: 'user', content: 'ＡＢＣ keyword' });
+    await store.write(second);
+
+    await expect(store.search('strasse')).resolves.toEqual([expect.objectContaining({ id: 'eszett' })]);
+    await expect(store.search('abc')).resolves.toEqual([expect.objectContaining({ id: 'wide' })]);
+  });
+
+  test('wraps root list failures without exposing the full selected directory', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-conversations-'));
+    const secretRoot = join(directory, 'token-abcdef123456');
+    await mkdir(secretRoot);
+    const realFs = await import('node:fs/promises');
+    vi.doMock('node:fs/promises', async () => ({
+      ...realFs,
+      readdir: async (path: string, options?: unknown) => {
+        if (path === secretRoot) throw Object.assign(new Error(`permission denied at ${secretRoot}`), { code: 'EACCES' });
+        return realFs.readdir(path, options as never);
+      },
+    }));
+    const { ConversationStore: FailingStore } = await import('../src/node/conversationStore');
+
+    await expect(new FailingStore(secretRoot).list()).rejects.toThrow('EACCES');
+    await expect(new FailingStore(secretRoot).list()).rejects.not.toThrow(secretRoot);
+    await expect(new FailingStore(secretRoot).list()).rejects.not.toThrow('abcdef123456');
+  });
 });
 
 describe('CepRuntime conversation methods', () => {
@@ -393,5 +507,35 @@ describe('CepRuntime conversation methods', () => {
     expect(message).toContain('无法读取 Markdown');
     expect(message).not.toContain(secret);
     expect(message).toContain('[REDACTED]');
+  });
+
+  test('redacts token-like Markdown filenames while keeping ordinary names recognizable', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'ae-ai-runtime-'));
+    const cases = [
+      { filename: 'token-abcdef123456.md', secret: 'abcdef123456' },
+      { filename: 'api-key-abcdef123456.md', secret: 'abcdef123456' },
+      { filename: 'notes-0123456789abcdef0123456789abcdef.md', secret: '0123456789abcdef0123456789abcdef' },
+      { filename: 'clip-QWxhZGRpbjpvcGVuIHNlc2FtZQ.md', secret: 'QWxhZGRpbjpvcGVuIHNlc2FtZQ' },
+    ];
+
+    for (const item of cases) {
+      let message = '';
+      try {
+        await createRuntime().createConversation(directory, project, [join(directory, item.filename)], 'c1', now);
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message).toContain('Markdown');
+      expect(message).not.toContain(item.secret);
+      expect(message).toContain('[REDACTED]');
+    }
+
+    let normalMessage = '';
+    try {
+      await createRuntime().createConversation(directory, project, [join(directory, 'normal-project-notes.md')], 'c1', now);
+    } catch (error) {
+      normalMessage = (error as Error).message;
+    }
+    expect(normalMessage).toContain('normal-project-notes.md');
   });
 });
