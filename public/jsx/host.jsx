@@ -64,4 +64,17 @@ var AEAI = AEAI || {};
     } catch (e) { return fail('第 ' + (results.length + 1) + ' 个动作失败：' + e.toString()); }
     finally { app.endUndoGroup(); }
   };
+
+  AEAI.executeScript = function (encodedPath) {
+    try {
+      var path = decodeURIComponent(encodedPath);
+      if (!/\.(jsxbin|jsx|js)$/i.test(path)) return fail('只允许启动 .jsx、.jsxbin 或 .js 脚本');
+      var file = new File(path);
+      if (!file.exists) return fail('脚本不存在：' + path);
+      app.beginUndoGroup('AE AI Assistant: 启动脚本');
+      try { $.evalFile(file); }
+      finally { app.endUndoGroup(); }
+      return ok({ path: path });
+    } catch (e) { return fail(e.toString()); }
+  };
 }());

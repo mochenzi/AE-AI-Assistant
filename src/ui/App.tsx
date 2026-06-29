@@ -47,6 +47,7 @@ import {
   hostBridge,
   selectCepDirectory,
   selectCepMarkdownFiles,
+  selectCepScriptMenuMarkdown,
   type ProjectContext,
 } from "../cep/bridge";
 import { migrateState } from "../shared/stateMigration";
@@ -84,6 +85,11 @@ import {
   type ConversationSummary,
   type ProjectIdentity,
 } from "../shared/conversationWorkspace";
+import {
+  formatScriptMenuPrompt,
+  resolveScriptMenuChoice,
+  type ScriptMenuItem,
+} from "../shared/scriptMenu";
 import {
   convertLegacyConversations,
   persistLegacyConversations,
@@ -319,6 +325,7 @@ function ChatPage({
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [newMarkdownPaths, setNewMarkdownPaths] = useState<string[]>([]);
   const [creatingConversation, setCreatingConversation] = useState(false);
+  const [scriptMenuItems, setScriptMenuItems] = useState<ScriptMenuItem[]>([]);
   const [selectedContexts, setSelectedContexts] = useState<string[]>(
     state.contexts.map(({ id }) => id),
   );
@@ -373,6 +380,7 @@ function ChatPage({
   const contextLimit =
     effectiveContextWindow(selectedModelMeta) || profile?.chat?.contextWindow;
   const budget = contextStatus(estimated, contextLimit);
+  const pendingScriptChoice = resolveScriptMenuChoice(scriptMenuItems, prompt);
 
   useEffect(() => {
     setSelectedContexts((ids) =>
@@ -584,11 +592,66 @@ function ChatPage({
     runtime.writeConversation(conversationDirectory, titled).catch((error) => setNotice((error as Error).message));
   }
 
+  async function addAssistantMessage(content: string) {
+    const active = activeDocument ?? await createConversation([]);
+    if (!active) return;
+    const nextConversation: ConversationDocument = {
+      ...active,
+      messages: [...active.messages, { role: "assistant" as const, content }],
+      updatedAt: now(),
+    };
+    await runtime.writeConversation(conversationDirectory, nextConversation);
+    setActiveDocument(nextConversation);
+    await refreshConversations();
+  }
+
+  async function loadScriptMenu() {
+    const markdownPath = hostBridge.isCep() ? selectCepScriptMenuMarkdown() : "preview-script-menu.md";
+    if (!markdownPath) return;
+    try {
+      const items = await runtime.loadScriptMenu(markdownPath);
+      setScriptMenuItems(items);
+      await addAssistantMessage(formatScriptMenuPrompt(items));
+      setPlusMenuOpen(false);
+      setNotice(items.length ? "已读取脚本启动菜单" : "Markdown 中没有找到可启动脚本");
+    } catch (error) {
+      setNotice((error as Error).message);
+    }
+  }
+
   async function send() {
     if (!prompt.trim() || budget.level === "blocked") return;
     const active = activeDocument ?? await createConversation([]);
     if (!active) {
       setNotice("请先创建或选择一个会话");
+      return;
+    }
+    const scriptChoice = resolveScriptMenuChoice(scriptMenuItems, prompt);
+    if (scriptChoice) {
+      setBusy(true);
+      try {
+        await hostBridge.executeScript(scriptChoice.path);
+        const nextConversation: ConversationDocument = {
+          ...active,
+          title: active.messages.length ? active.title : titleFromPrompt(`启动脚本 ${scriptChoice.name}`),
+          messages: [
+            ...active.messages,
+            { role: "user" as const, content: prompt },
+            { role: "assistant" as const, content: `已启动脚本：${scriptChoice.name}` },
+          ],
+          updatedAt: now(),
+        };
+        await runtime.writeConversation(conversationDirectory, nextConversation);
+        setActiveDocument(nextConversation);
+        await refreshConversations();
+        setPrompt("");
+        setScriptMenuItems([]);
+        setNotice("脚本已启动");
+      } catch (error) {
+        setNotice((error as Error).message);
+      } finally {
+        setBusy(false);
+      }
       return;
     }
     setBusy(true);
@@ -924,6 +987,9 @@ function ChatPage({
                     >
                       <FileText size={14} /> 上下文档案
                     </button>
+                    <button type="button" onClick={loadScriptMenu}>
+                      <Play size={14} /> 脚本启动菜单
+                    </button>
                     {contextPickerOpen && (
                       <div className="composer-context-list">
                         {state.contexts.length === 0 && (
@@ -1026,14 +1092,14 @@ function ChatPage({
                   busy ||
                   !prompt.trim() ||
                   budget.level === "blocked" ||
-                  (hostBridge.isCep() && !currentChatChoice)
+                  (hostBridge.isCep() && !currentChatChoice && !pendingScriptChoice)
                 }
                 onClick={send}
               >
                 {busy ? <LoaderCircle className="spin" /> : <Send />}
               </button>
             </div>
-            {hostBridge.isCep() && !currentChatChoice && (
+            {hostBridge.isCep() && !currentChatChoice && !pendingScriptChoice && (
               <small className="composer-hint">
                 请先在 API 页面保存聊天模型
               </small>

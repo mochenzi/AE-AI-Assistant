@@ -8,6 +8,7 @@ import {
   type ConversationSummary,
   type ProjectIdentity,
 } from '../shared/conversationWorkspace';
+import { parseScriptMenuMarkdown, type ScriptMenuItem } from '../shared/scriptMenu';
 
 declare global {
   interface Window {
@@ -46,6 +47,10 @@ export const hostBridge = {
     const encoded = encodeURIComponent(JSON.stringify(plan)).replace(/'/g, '%27');
     window.__adobe_cep__!.evalScript(`AEAI.executePlan('${encoded}')`, (raw) => { try { resolve(parseHost(raw)); } catch (error) { reject(error); } });
   }),
+  executeScript: (path: string): Promise<unknown> => !window.__adobe_cep__ ? Promise.resolve({ preview: true, path }) : new Promise((resolve, reject) => {
+    const encoded = encodeURIComponent(path).replace(/'/g, '%27');
+    window.__adobe_cep__!.evalScript(`AEAI.executeScript('${encoded}')`, (raw) => { try { resolve(parseHost(raw)); } catch (error) { reject(error); } });
+  }),
 };
 
 export interface RuntimeBridge {
@@ -71,6 +76,7 @@ export interface RuntimeBridge {
   searchConversations(directory: string, query: string): Promise<ConversationSummary[]>;
   renameConversation(directory: string, projectKey: string, id: string, title: string): Promise<ConversationDocument>;
   moveConversationProject(directory: string, fromKey: string, project: ProjectIdentity): Promise<void>;
+  loadScriptMenu(markdownPath: string): Promise<ScriptMenuItem[]>;
 }
 
 class PreviewRuntime implements RuntimeBridge {
@@ -132,6 +138,9 @@ class PreviewRuntime implements RuntimeBridge {
     ));
     this.savePreviewDocuments(documents);
   }
+  async loadScriptMenu(markdownPath: string): Promise<ScriptMenuItem[]> {
+    return parseScriptMenuMarkdown(`1. 预览脚本 - ${markdownPath.replace(/\.md$/i, '.jsx')}`);
+  }
   async testProfile() { return { ok: true, modelCount: 2 }; }
   async listModels() { return [{ id: 'preview-model', contextWindow: 128000 }]; }
   async getBalance() { return { amount: 88.8, currency: 'CNY' }; }
@@ -185,6 +194,11 @@ export function selectCepDirectory(title = '选择对话归档文件夹'): strin
 export function selectCepMarkdownFiles(): string[] {
   const result = window.cep?.fs?.showOpenDialog(true, false, '选择 Markdown 上下文', '', ['md']);
   return result ? normalizeCepFileSelection(result) : [];
+}
+
+export function selectCepScriptMenuMarkdown(): string | null {
+  const result = window.cep?.fs?.showOpenDialog(false, false, '选择脚本启动菜单 Markdown', '', ['md']);
+  return result ? normalizeCepFileSelection(result)[0] ?? null : null;
 }
 
 export function getRuntime(): RuntimeBridge {

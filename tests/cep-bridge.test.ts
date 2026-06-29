@@ -48,6 +48,15 @@ describe('CEP bridge', () => {
     expect(showOpenDialog).toHaveBeenCalledWith(true, false, expect.any(String), '', ['md']);
   });
 
+  test('selects a single script menu Markdown file', async () => {
+    const showOpenDialog = vi.fn().mockReturnValue({ err: 0, data: ['file:///D:/menus/scripts.md'] });
+    vi.stubGlobal('window', { cep: { fs: { showOpenDialog } } });
+    const { selectCepScriptMenuMarkdown } = await import('../src/cep/bridge');
+
+    expect(selectCepScriptMenuMarkdown()).toBe('D:/menus/scripts.md');
+    expect(showOpenDialog).toHaveBeenCalledWith(false, false, expect.any(String), '', ['md']);
+  });
+
   test('preview runtime persists conversation documents in localStorage', async () => {
     installPreviewWindow();
     const { getRuntime } = await import('../src/cep/bridge');
