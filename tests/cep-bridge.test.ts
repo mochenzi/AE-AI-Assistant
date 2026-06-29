@@ -57,6 +57,31 @@ describe('CEP bridge', () => {
     expect(showOpenDialog).toHaveBeenCalledWith(false, false, expect.any(String), '', ['md']);
   });
 
+  test('returns a preview active composition snapshot when CEP is absent', async () => {
+    installPreviewWindow();
+    const { hostBridge } = await import('../src/cep/bridge');
+
+    await expect(hostBridge.getActiveCompositionSnapshot()).resolves.toMatchObject({
+      version: 'ae-composition-context/v1',
+      composition: { name: 'Main' },
+      layers: [
+        expect.objectContaining({ name: '标题', selected: true }),
+        expect.objectContaining({ name: '背景' }),
+      ],
+    });
+  });
+
+  test('surfaces host snapshot parse errors unchanged', async () => {
+    const evalScript = vi.fn((script: string, callback: (raw: string) => void) => {
+      expect(script).toBe('AEAI.getActiveCompositionSnapshot()');
+      callback(JSON.stringify({ ok: false, error: '请先打开一个活动合成' }));
+    });
+    vi.stubGlobal('window', { __adobe_cep__: { evalScript } });
+    const { hostBridge } = await import('../src/cep/bridge');
+
+    await expect(hostBridge.getActiveCompositionSnapshot()).rejects.toThrow('请先打开一个活动合成');
+  });
+
   test('preview runtime persists conversation documents in localStorage', async () => {
     installPreviewWindow();
     const { getRuntime } = await import('../src/cep/bridge');

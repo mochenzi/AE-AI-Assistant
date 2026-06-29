@@ -8,6 +8,7 @@ import {
   type ConversationSummary,
   type ProjectIdentity,
 } from '../shared/conversationWorkspace';
+import type { CompositionSnapshot } from '../shared/compositionSnapshot';
 import { parseScriptMenuMarkdown, type ScriptMenuItem } from '../shared/scriptMenu';
 
 declare global {
@@ -34,6 +35,57 @@ const fallbackProject: ProjectContext = {
   selectedLayers: [],
 };
 
+export const fallbackCompositionSnapshot: CompositionSnapshot = {
+  version: 'ae-composition-context/v1',
+  projectRevision: fallbackProject.revision,
+  composition: {
+    id: 1,
+    name: 'Main',
+    width: 1920,
+    height: 1080,
+    pixelAspect: 1,
+    duration: 10,
+    frameRate: 25,
+    workAreaStart: 0,
+    workAreaDuration: 10,
+    time: 0,
+  },
+  layers: [
+    {
+      index: 1,
+      name: '标题',
+      type: 'ADBE Text Layer',
+      selected: true,
+      enabled: true,
+      locked: false,
+      parentIndex: null,
+      startTime: 0,
+      inPoint: 0,
+      outPoint: 10,
+      sourceText: '你好，AE AI Assistant',
+      properties: [],
+      effects: [],
+      unavailable: [],
+    },
+    {
+      index: 2,
+      name: '背景',
+      type: 'ADBE AV Layer',
+      selected: false,
+      enabled: true,
+      locked: false,
+      parentIndex: null,
+      startTime: 0,
+      inPoint: 0,
+      outPoint: 10,
+      properties: [],
+      effects: [],
+      unavailable: [],
+    },
+  ],
+  unavailable: [],
+};
+
 function parseHost<T>(raw: string): T {
   const result = JSON.parse(raw) as { ok: boolean; value?: T; error?: string };
   if (!result.ok) throw new Error(result.error || 'AE 执行失败');
@@ -43,6 +95,7 @@ function parseHost<T>(raw: string): T {
 export const hostBridge = {
   isCep: () => Boolean(window.__adobe_cep__),
   getProjectContext: (): Promise<ProjectContext> => !window.__adobe_cep__ ? Promise.resolve(fallbackProject) : new Promise((resolve, reject) => window.__adobe_cep__!.evalScript('AEAI.getProjectContext()', (raw) => { try { resolve(parseHost<ProjectContext>(raw)); } catch (error) { reject(error); } })),
+  getActiveCompositionSnapshot: (): Promise<CompositionSnapshot> => !window.__adobe_cep__ ? Promise.resolve(fallbackCompositionSnapshot) : new Promise((resolve, reject) => window.__adobe_cep__!.evalScript('AEAI.getActiveCompositionSnapshot()', (raw) => { try { resolve(parseHost<CompositionSnapshot>(raw)); } catch (error) { reject(error); } })),
   executePlan: (plan: AeActionPlan): Promise<unknown> => !window.__adobe_cep__ ? Promise.resolve({ preview: true }) : new Promise((resolve, reject) => {
     const encoded = encodeURIComponent(JSON.stringify(plan)).replace(/'/g, '%27');
     window.__adobe_cep__!.evalScript(`AEAI.executePlan('${encoded}')`, (raw) => { try { resolve(parseHost(raw)); } catch (error) { reject(error); } });
