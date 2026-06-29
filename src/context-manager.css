@@ -48,6 +48,149 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .archive-location { border: 1px solid var(--line); background: #171c19; padding: 12px; margin-bottom: 16px; display: grid; gap: 8px; }
 .archive-location code { color: var(--cyan); font-size: 9px; overflow-wrap: anywhere; }
 .chat-layout { display: flex; flex-direction: column; min-height: 0; padding-top: 10px; }
+.conversation-workspace {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(190px, 240px) minmax(0, 1fr);
+  gap: 10px;
+}
+.conversation-drawer {
+  position: relative;
+  min-width: 0;
+  border: 1px solid #344039;
+  border-radius: 14px;
+  background: #121813;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  box-shadow: inset 0 1px #28332c;
+}
+.conversation-drawer.collapsed {
+  width: 42px;
+  padding: 7px;
+  align-items: center;
+}
+.drawer-toggle {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #465149;
+  border-radius: 50%;
+  background: #111713;
+  color: #aab3ad;
+  display: grid;
+  place-items: center;
+}
+.drawer-project {
+  padding: 8px;
+  border: 1px solid #29342d;
+  border-radius: 10px;
+  background: #0f1411;
+  display: grid;
+  gap: 2px;
+}
+.drawer-project small, .conversation-item small, .new-conversation-dialog small {
+  color: var(--muted);
+  font-size: 8px;
+}
+.drawer-project b, .conversation-item b {
+  color: #e0e7e2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.new-conversation-button {
+  border: 1px solid #5f7930;
+  border-radius: 10px;
+  background: #223018;
+  color: var(--acid);
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.conversation-search {
+  border: 1px solid #344039;
+  border-radius: 9px;
+  background: #0f1411;
+  padding: 6px 7px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+}
+.conversation-search input {
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 9px;
+}
+.conversation-list {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 6px;
+}
+.conversation-item {
+  width: 100%;
+  border: 1px solid #2f3933;
+  border-radius: 11px;
+  background: #171d19;
+  color: #c8d0cb;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  text-align: left;
+}
+.conversation-item.active {
+  border-color: #71932f;
+  background: #202b19;
+}
+.conversation-item > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.conversation-item i {
+  width: 23px;
+  height: 23px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--muted);
+}
+.conversation-item i:hover { background: #2d382f; color: var(--acid); }
+.drawer-rename {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  z-index: 35;
+  border: 1px solid #465149;
+  border-radius: 12px;
+  background: #101612;
+  padding: 10px;
+  box-shadow: 0 12px 28px #000b;
+  display: grid;
+  gap: 8px;
+}
+.drawer-rename label { display: grid; gap: 5px; font-size: 9px; color: var(--muted); }
+.drawer-rename input {
+  width: 100%;
+  border: 1px solid #344039;
+  background: #0b100d;
+  border-radius: 8px;
+  padding: 7px;
+}
+.drawer-rename div { display: flex; justify-content: flex-end; gap: 6px; }
 .chat-layout .conversation-frame.clean-chat {
   flex: 1 1 auto;
   min-height: 0;
@@ -58,6 +201,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   grid-template-rows: minmax(0, 1fr) auto;
   overflow: visible;
 }
+.conversation-workspace .conversation-frame.clean-chat { min-width: 0; }
 .clean-chat .conversation { position: relative; padding: 8px 12px 18px; }
 .empty-mark.centered {
   position: absolute;
@@ -157,6 +301,78 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .composer-hint { position: static; display: block; margin-top: 7px; color: #7b837e; font-size: 8px; }
 .composer-context-editor { position: absolute; left: 12px; right: 12px; bottom: calc(100% + 8px); z-index: 25; }
+.active-markdown {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 2px 0 8px;
+}
+.markdown-chip-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.markdown-chip {
+  border: 1px solid #3d5746;
+  border-radius: 999px;
+  background: #132017;
+  color: var(--cyan);
+  padding: 4px 8px;
+  font-size: 9px;
+}
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: #0008;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+.new-conversation-dialog {
+  width: min(430px, 100%);
+  border: 1px solid #465149;
+  border-radius: 16px;
+  background: #121813;
+  box-shadow: 0 24px 70px #000c, inset 0 1px #28332c;
+  padding: 14px;
+  display: grid;
+  gap: 11px;
+}
+.dialog-title, .dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.dialog-title h2 { margin: 2px 0 0; font-size: 17px; }
+.dialog-title button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+}
+.markdown-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+.markdown-options button {
+  min-height: 38px;
+  border: 1px solid #3b463f;
+  border-radius: 10px;
+  background: #171d19;
+  color: #dbe4de;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.markdown-options button.active {
+  border-color: #789b2e;
+  color: var(--acid);
+}
+.dialog-actions { justify-content: flex-end; }
 .media-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .provider-presets small { display: block; color: var(--muted); margin-top: 3px; }
 .model-config-grid { align-items: start; }
@@ -175,4 +391,15 @@ button:disabled { cursor: wait; opacity: .58; }
   .context-count { display: none; }
   .composer-shell { padding-inline: 8px; }
   .media-toolbar { align-items: stretch; flex-direction: column; }
+}
+@media (max-width: 620px) {
+  .conversation-workspace { grid-template-columns: auto minmax(0, 1fr); }
+  .conversation-drawer:not(.collapsed) {
+    position: absolute;
+    z-index: 40;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: min(180px, calc(100vw - 42px));
+  }
 }
