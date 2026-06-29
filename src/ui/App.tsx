@@ -82,6 +82,7 @@ import {
   titleFromPrompt,
   type ConversationDocument,
   type ConversationSummary,
+  type ProjectIdentity,
 } from "../shared/conversationWorkspace";
 
 type Tab = "chat" | "media" | "templates" | "api" | "history";
@@ -296,6 +297,7 @@ function ChatPage({
   const runtime = getRuntime();
   const latestState = useRef(state);
   latestState.current = state;
+  const previousProject = useRef<ProjectIdentity | null>(null);
   const [prompt, setPrompt] = useState(
     () => sessionStorage.getItem("ae-ai-template") || "",
   );
@@ -405,6 +407,25 @@ function ChatPage({
   useEffect(() => {
     refreshConversations();
   }, [refreshConversations]);
+
+  useEffect(() => {
+    const previous = previousProject.current;
+    previousProject.current = projectId;
+    if (!previous || !previous.unsaved || projectId.unsaved || previous.key === projectId.key) return;
+    const activeId = latestState.current.activeConversationId;
+    runtime
+      .moveConversationProject(conversationDirectory, previous.key, projectId)
+      .then(async () => {
+        const summaries = await runtime.listConversations(conversationDirectory, projectId.key);
+        setConversationSummaries(summaries);
+        if (activeId && summaries.some((item) => item.id === activeId)) {
+          const document = await runtime.readConversation(conversationDirectory, projectId.key, activeId);
+          setActiveDocument(document);
+          update((current) => ({ ...current, activeConversationId: activeId }));
+        }
+      })
+      .catch((error) => setNotice((error as Error).message));
+  }, [conversationDirectory, projectId, runtime, setNotice, update]);
 
   useEffect(() => {
     if (!activeDocument) return;
@@ -961,14 +982,14 @@ function ChatPage({
                   busy ||
                   !prompt.trim() ||
                   budget.level === "blocked" ||
-                  !currentChatChoice
+                  (hostBridge.isCep() && !currentChatChoice)
                 }
                 onClick={send}
               >
                 {busy ? <LoaderCircle className="spin" /> : <Send />}
               </button>
             </div>
-            {!currentChatChoice && (
+            {hostBridge.isCep() && !currentChatChoice && (
               <small className="composer-hint">
                 请先在 API 页面保存聊天模型
               </small>
@@ -983,7 +1004,8 @@ function ChatPage({
         reading={creatingConversation}
         onPickMarkdown={() => {
           const paths = selectCepMarkdownFiles();
-          setNewMarkdownPaths(paths.length ? paths : ["preview.md"]);
+          if (paths.length) setNewMarkdownPaths(paths);
+          else if (!hostBridge.isCep()) setNewMarkdownPaths(["preview.md"]);
         }}
         onClearMarkdown={() => setNewMarkdownPaths([])}
         onCancel={() => {

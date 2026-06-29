@@ -58,35 +58,31 @@ export function ConversationDrawer({
           </label>
           <div className="conversation-list">
             {conversations.map((item) => (
-              <button
-                type="button"
+              <div
                 key={item.id}
                 className={`conversation-item ${item.id === activeId ? "active" : ""}`}
-                onClick={() => onSelect(item.id)}
               >
-                <MessageSquare size={14} />
-                <span>
-                  <b>{item.title}</b>
-                  <small>{new Date(item.updatedAt).toLocaleString()}</small>
-                </span>
-                <i
-                  role="button"
-                  tabIndex={0}
+                <button
+                  type="button"
+                  className="conversation-item-main"
+                  onClick={() => onSelect(item.id)}
+                >
+                  <MessageSquare size={14} />
+                  <span>
+                    <b>{item.title}</b>
+                    <small>{new Date(item.updatedAt).toLocaleString()}</small>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="conversation-rename-button"
                   title="重命名会话"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setRenaming({ id: item.id, title: item.title });
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter" && event.key !== " ") return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setRenaming({ id: item.id, title: item.title });
-                  }}
+                  aria-label="重命名会话"
+                  onClick={() => setRenaming({ id: item.id, title: item.title })}
                 >
                   <Edit3 size={12} />
-                </i>
-              </button>
+                </button>
+              </div>
             ))}
             {!conversations.length && <p className="muted">还没有会话</p>}
           </div>
