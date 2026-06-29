@@ -19,6 +19,73 @@ var AEAI = AEAI || {};
     if (comp) { count = comp.numLayers; for (var i = 0; i < comp.selectedLayers.length; i++) selected.push(comp.selectedLayers[i].index); }
     return [app.project.file ? app.project.file.fsName : 'unsaved', comp ? comp.id : 0, count, selected.join(',')].join('|');
   }
+  function safeValue(value) {
+    if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+    if (value instanceof Array) {
+      var result = [];
+      for (var i = 0; i < value.length; i++) result.push(safeValue(value[i]));
+      return result;
+    }
+    return String(value);
+  }
+  function attempt(label, unavailable, reader) {
+    try { return reader(); }
+    catch (e) { unavailable.push({ field: label, reason: String(e) }); return null; }
+  }
+  function readProperty(property, unavailable) {
+    return attempt(property.matchName || property.name, unavailable, function () {
+      var keys = [], keyCount = property.numKeys || 0;
+      for (var keyIndex = 1; keyIndex <= keyCount && keyIndex <= 50; keyIndex++) {
+        keys.push({ time: property.keyTime(keyIndex), value: safeValue(property.keyValue(keyIndex)) });
+      }
+      return {
+        name: property.name,
+        matchName: property.matchName,
+        value: keyCount ? null : safeValue(property.value),
+        expression: property.canSetExpression && property.expressionEnabled ? property.expression : '',
+        keyframes: keys,
+        unavailable: []
+      };
+    });
+  }
+  function pushProperty(result, property, unavailable) {
+    var value = readProperty(property, unavailable);
+    if (value) result.push(value);
+  }
+  function readPropertyGroup(group, unavailable, limit) {
+    var result = [];
+    if (!group) return result;
+    attempt(group.matchName || group.name || 'properties', unavailable, function () {
+      var count = group.numProperties || 0;
+      for (var i = 1; i <= count && (!limit || i <= limit); i++) {
+        var property = group.property(i);
+        if (property && property.numProperties) {
+          var nested = readPropertyGroup(property, unavailable);
+          for (var j = 0; j < nested.length; j++) result.push(nested[j]);
+        } else if (property) pushProperty(result, property, unavailable);
+      }
+      return result;
+    });
+    return result;
+  }
+  function readEffects(layer, unavailable) {
+    var effects = [], parade = attempt('effects', unavailable, function () { return layer.property('ADBE Effect Parade'); });
+    if (!parade) return effects;
+    attempt('effects', unavailable, function () {
+      var count = parade.numProperties || 0;
+      for (var i = 1; i <= count && i <= 30; i++) {
+        var effect = parade.property(i), effectUnavailable = [];
+        effects.push({
+          name: effect.name,
+          matchName: effect.matchName,
+          properties: readPropertyGroup(effect, effectUnavailable),
+          unavailable: effectUnavailable
+        });
+      }
+      return effects;
+    });
+    return effects;
+  }
 
   AEAI.getProjectContext = function () {
     try {
@@ -28,6 +95,63 @@ var AEAI = AEAI || {};
         layers.push({ id: layer.index, name: layer.name, type: layer.matchName, inPoint: layer.inPoint, outPoint: layer.outPoint });
       }
       return ok({ projectName: app.project.file ? app.project.file.name : '未保存工程', projectPath: app.project.file ? app.project.file.fsName : '', revision: revision(), activeComp: comp ? { id: comp.id, name: comp.name, width: comp.width, height: comp.height, duration: comp.duration, frameRate: comp.frameRate, layerCount: comp.numLayers } : null, selectedLayers: layers });
+    } catch (e) { return fail(e.toString()); }
+  };
+
+  AEAI.getActiveCompositionSnapshot = function () {
+    try {
+      var comp = activeComp();
+      if (!comp) return fail('请先打开一个活动合成');
+      var layers = [], compUnavailable = [];
+      for (var i = 1; i <= comp.numLayers; i++) {
+        var layer = comp.layer(i), unavailable = [], properties = [];
+        var transform = attempt('transform', unavailable, function () { return layer.property('ADBE Transform Group'); });
+        var selectedProperties = attempt('selectedProperties', unavailable, function () { return layer.selectedProperties; }) || [];
+        var text = attempt('sourceText', unavailable, function () {
+          var textGroup = layer.property('ADBE Text Properties');
+          var textDocument = textGroup ? textGroup.property('ADBE Text Document') : null;
+          return textDocument && textDocument.value ? String(textDocument.value.text) : '';
+        });
+        var transformProperties = readPropertyGroup(transform, unavailable);
+        for (var t = 0; t < transformProperties.length; t++) properties.push(transformProperties[t]);
+        for (var s = 0; s < selectedProperties.length; s++) {
+          if (selectedProperties[s] && !selectedProperties[s].numProperties) pushProperty(properties, selectedProperties[s], unavailable);
+        }
+        layers.push({
+          index: layer.index,
+          name: layer.name,
+          type: layer.matchName,
+          selected: layer.selected,
+          enabled: layer.enabled,
+          locked: layer.locked,
+          parentIndex: layer.parent ? layer.parent.index : null,
+          startTime: layer.startTime,
+          inPoint: layer.inPoint,
+          outPoint: layer.outPoint,
+          sourceText: text || '',
+          properties: properties,
+          effects: readEffects(layer, unavailable),
+          unavailable: unavailable
+        });
+      }
+      return ok({
+        version: 'ae-composition-context/v1',
+        projectRevision: revision(),
+        composition: {
+          id: comp.id,
+          name: comp.name,
+          width: comp.width,
+          height: comp.height,
+          pixelAspect: comp.pixelAspect,
+          duration: comp.duration,
+          frameRate: comp.frameRate,
+          workAreaStart: comp.workAreaStart,
+          workAreaDuration: comp.workAreaDuration,
+          time: comp.time
+        },
+        layers: layers,
+        unavailable: compUnavailable
+      });
     } catch (e) { return fail(e.toString()); }
   };
 
