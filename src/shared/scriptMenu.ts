@@ -1,3 +1,9 @@
+export interface ScriptMenuMarkdownSnapshot {
+  name: string;
+  sourcePath: string;
+  content: string;
+}
+
 export interface ScriptMenuItem {
   index: number;
   name: string;
@@ -11,7 +17,10 @@ function cleanPath(value: string): string {
 }
 
 function cleanName(value: string, fallback: string): string {
-  return value.replace(/^[-*\d.\s]+/, '').replace(/[:：\-—–]\s*$/, '').trim() || fallback;
+  return value
+    .replace(/^[-*\d.\s]+/, '')
+    .replace(/[\s:\uFF1A\-\u2013\u2014]+$/, '')
+    .trim() || fallback;
 }
 
 function basename(path: string): string {
@@ -35,15 +44,29 @@ export function parseScriptMenuMarkdown(markdown: string): ScriptMenuItem[] {
       continue;
     }
     const path = line.match(/((?:[A-Za-z]:[\\/]|\\\\)[^\r\n|<>?*"]+?\.(?:jsxbin|jsx|js))/i);
-    if (path) add(line.slice(0, path.index).replace(/[:：\-—–]\s*$/, ''), path[1]);
+    if (path) {
+      add(line.slice(0, path.index).replace(/[\s:\uFF1A\-\u2013\u2014]*$/, ''), path[1]);
+    }
   }
 
   return items;
 }
 
+export function parseScriptMenuSnapshots(snapshots: ScriptMenuMarkdownSnapshot[]): ScriptMenuItem[] {
+  return parseScriptMenuMarkdown(snapshots.map((snapshot) => snapshot.content).join('\n'));
+}
+
 export function formatScriptMenuPrompt(items: ScriptMenuItem[]): string {
-  if (!items.length) return '没有在 Markdown 中找到可启动脚本。请使用 .jsx、.jsxbin 或 .js 路径。';
-  return `检测到以下脚本：\n${items.map((item) => `${item.index}. ${item.name}`).join('\n')}\n请输入数字启动脚本。`;
+  if (!items.length) {
+    return '\u6ca1\u6709\u5728\u5f53\u524d\u5bf9\u8bdd\u9009\u62e9\u7684 Markdown '
+      + '\u4e2d\u627e\u5230\u53ef\u542f\u52a8\u811a\u672c\u3002'
+      + '\u8bf7\u5728\u65b0\u5bf9\u8bdd\u91cc\u9009\u62e9\u5305\u542b .jsx\u3001.jsxbin '
+      + '\u6216 .js \u8def\u5f84\u7684 MD\u3002';
+  }
+  return '\u68c0\u6d4b\u5230\u4ee5\u4e0b\u811a\u672c\uff1a\n'
+    + items.map((item) => `${item.index}. ${item.name}`).join('\n')
+    + '\n\u8bf7\u9009\u62e9\u8981\u542f\u52a8\u54ea\u4e00\u4e2a\u811a\u672c\uff0c'
+    + '\u76f4\u63a5\u8f93\u5165\u6570\u5b57\u5373\u53ef\u3002';
 }
 
 export function resolveScriptMenuChoice(items: ScriptMenuItem[], input: string): ScriptMenuItem | null {

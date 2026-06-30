@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'vitest';
-import { formatScriptMenuPrompt, parseScriptMenuMarkdown, resolveScriptMenuChoice } from '../src/shared/scriptMenu';
+import {
+  formatScriptMenuPrompt,
+  parseScriptMenuMarkdown,
+  parseScriptMenuSnapshots,
+  resolveScriptMenuChoice,
+} from '../src/shared/scriptMenu';
 
 describe('script menu markdown', () => {
   test('parses numbered script paths and markdown links', () => {
@@ -25,5 +30,16 @@ describe('script menu markdown', () => {
     expect(resolveScriptMenuChoice(items, '1')).toEqual(items[0]);
     expect(resolveScriptMenuChoice(items, '启动 1')).toBeNull();
     expect(resolveScriptMenuChoice(items, '2')).toBeNull();
+  });
+
+  test('builds the launch menu from markdown already attached to the conversation', () => {
+    const items = parseScriptMenuSnapshots([
+      { name: 'scripts.md', sourcePath: 'D:/md/scripts.md', content: '1. Launch Intro - D:/AE/scripts/intro.jsx' },
+      { name: 'notes.md', sourcePath: 'D:/md/notes.md', content: 'No scripts here.' },
+    ]);
+
+    expect(items).toEqual([
+      { index: 1, name: 'Launch Intro', path: 'D:/AE/scripts/intro.jsx' },
+    ]);
   });
 });

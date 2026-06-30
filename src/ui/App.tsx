@@ -47,7 +47,6 @@ import {
   hostBridge,
   selectCepDirectory,
   selectCepMarkdownFiles,
-  selectCepScriptMenuMarkdown,
   type ProjectContext,
 } from "../cep/bridge";
 import { migrateState } from "../shared/stateMigration";
@@ -87,6 +86,7 @@ import {
 } from "../shared/conversationWorkspace";
 import {
   formatScriptMenuPrompt,
+  parseScriptMenuSnapshots,
   resolveScriptMenuChoice,
   type ScriptMenuItem,
 } from "../shared/scriptMenu";
@@ -607,17 +607,19 @@ function ChatPage({
   }
 
   async function loadScriptMenu() {
-    const markdownPath = hostBridge.isCep() ? selectCepScriptMenuMarkdown() : "preview-script-menu.md";
-    if (!markdownPath) return;
-    try {
-      const items = await runtime.loadScriptMenu(markdownPath);
-      setScriptMenuItems(items);
-      await addAssistantMessage(formatScriptMenuPrompt(items));
+    const active = activeDocument ?? await createConversation([]);
+    if (!active) return;
+    if (!active.markdownSnapshots.length) {
       setPlusMenuOpen(false);
-      setNotice(items.length ? "已读取脚本启动菜单" : "Markdown 中没有找到可启动脚本");
-    } catch (error) {
-      setNotice((error as Error).message);
+      setNotice("\u8bf7\u5148\u65b0\u5efa\u5bf9\u8bdd\uff0c\u5e76\u9009\u62e9\u5305\u542b\u811a\u672c\u8def\u5f84\u7684 Markdown");
+      await addAssistantMessage(formatScriptMenuPrompt([]));
+      return;
     }
+    const items = parseScriptMenuSnapshots(active.markdownSnapshots);
+    setScriptMenuItems(items);
+    await addAssistantMessage(formatScriptMenuPrompt(items));
+    setPlusMenuOpen(false);
+    setNotice(items.length ? "\u5df2\u4ece\u5f53\u524d\u5bf9\u8bdd Markdown \u8bfb\u53d6\u811a\u672c\u83dc\u5355" : "\u5f53\u524d\u5bf9\u8bdd Markdown \u4e2d\u6ca1\u6709\u627e\u5230\u53ef\u542f\u52a8\u811a\u672c");
   }
 
   async function toggleActiveCompositionContext() {
@@ -2824,14 +2826,14 @@ function HistoryPage({
     }),
     { input: 0, output: 0 },
   );
-  const chooseArchiveDirectory = () => {
-    const directory = selectCepDirectory();
-    if (!directory) {
-      setNotice("未选择归档目录");
-      return;
-    }
+  const [archiveDraft, setArchiveDraft] = useState(state.archiveDirectory);
+  useEffect(() => {
+    setArchiveDraft(state.archiveDirectory);
+  }, [state.archiveDirectory]);
+  const saveArchiveDirectory = () => {
+    const directory = archiveDraft.trim();
     update((s) => ({ ...s, archiveDirectory: directory }));
-    setNotice(`对话将归档到：${directory}`);
+    setNotice(directory ? `\u5bf9\u8bdd\u5c06\u5f52\u6863\u5230\uff1a${directory}` : "\u5df2\u6e05\u7a7a\u5f52\u6863\u76ee\u5f55");
   };
   const chooseConversationDirectory = async () => {
     const directory = hostBridge.isCep() ? selectCepDirectory("选择对话数据目录") : "__preview__";
@@ -2900,8 +2902,13 @@ function HistoryPage({
             <p className="eyebrow">CONVERSATION ARCHIVE</p>
             <h3>对话归档目录</h3>
           </div>
-          <button onClick={chooseArchiveDirectory}>选择目录</button>
+          <button onClick={saveArchiveDirectory}>{"\u4fdd\u5b58\u4f4d\u7f6e"}</button>
         </div>
+        <input
+          value={archiveDraft}
+          onChange={(event) => setArchiveDraft(event.target.value)}
+          placeholder={"\u4f8b\u5982 D:\\AE AI Assistant\\Archives"}
+        />
         <code>
           {state.archiveDirectory || "尚未设置；归档时不会自动回退到 C 盘。"}
         </code>
