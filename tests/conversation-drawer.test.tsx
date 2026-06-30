@@ -39,16 +39,20 @@ describe('ConversationDrawer', () => {
         onSearch={() => undefined}
         onSelect={() => undefined}
         onRename={() => undefined}
+        onDelete={() => undefined}
       />,
     ));
 
     const item = container.querySelector('.conversation-item');
     const main = container.querySelector('.conversation-item-main');
-    const rename = container.querySelector('[title="重命名会话"]');
+    const rename = container.querySelector('.conversation-rename-button');
+    const deleteButton = container.querySelector('.conversation-delete-button');
 
     expect(item?.tagName).not.toBe('BUTTON');
     expect(main?.tagName).toBe('BUTTON');
     expect(rename?.tagName).toBe('BUTTON');
+    expect(deleteButton?.tagName).toBe('BUTTON');
     expect(main?.contains(rename)).toBe(false);
+    expect(main?.contains(deleteButton)).toBe(false);
   });
 });

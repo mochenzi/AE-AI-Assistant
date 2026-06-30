@@ -456,3 +456,12 @@ button:disabled { cursor: wait; opacity: .58; }
     width: min(180px, calc(100vw - 42px));
   }
 }
+
+.markdown-source-list { display: grid; gap: 7px; max-height: 260px; overflow: auto; margin-top: 10px; }
+.markdown-source { width: 100%; display: flex; gap: 8px; align-items: flex-start; text-align: left; border: 1px solid var(--line); background: #141916; color: inherit; padding: 9px; cursor: pointer; }
+.markdown-source.active { border-color: var(--cyan); background: #18231f; }
+.markdown-source span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.markdown-source b { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.markdown-source small { font-size: 8px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conversation-delete-button { border: 0; background: transparent; color: var(--muted); padding: 6px; cursor: pointer; }
+.conversation-delete-button:hover { color: var(--danger); }

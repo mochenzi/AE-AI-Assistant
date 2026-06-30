@@ -128,6 +128,7 @@ export interface RuntimeBridge {
   listConversations(directory: string, projectKey?: string): Promise<ConversationSummary[]>;
   searchConversations(directory: string, query: string): Promise<ConversationSummary[]>;
   renameConversation(directory: string, projectKey: string, id: string, title: string): Promise<ConversationDocument>;
+  deleteConversation(directory: string, projectKey: string, id: string): Promise<void>;
   moveConversationProject(directory: string, fromKey: string, project: ProjectIdentity): Promise<void>;
   loadScriptMenu(markdownPath: string): Promise<ScriptMenuItem[]>;
 }
@@ -185,6 +186,9 @@ class PreviewRuntime implements RuntimeBridge {
     await this.writeConversation(directory, document);
     return document;
   }
+  async deleteConversation(_directory: string, projectKey: string, id: string): Promise<void> {
+    this.savePreviewDocuments(this.previewDocuments().filter((document) => document.project.key !== projectKey || document.id !== id));
+  }
   async moveConversationProject(_directory: string, fromKey: string, project: ProjectIdentity): Promise<void> {
     const documents = this.previewDocuments().map((document) => (
       document.project.key === fromKey ? { ...document, project: { ...project } } : document
@@ -238,19 +242,10 @@ export function normalizeCepFileSelection(result: { err: number; data?: string[]
   return result.data.filter(Boolean).map(normalizeCepPath);
 }
 
-export function normalizeCepMarkdownSelection(result: { err: number; data?: string[] }): string[] {
-  return normalizeCepFileSelection(result).filter((filePath) => /\.md$/i.test(filePath));
-}
-
 export function selectCepDirectory(title = '选择对话归档文件夹'): string | null {
   const cepFs = window.cep?.fs;
   if (!cepFs) return null;
   return normalizeCepFolderSelection(cepFs.showOpenDialog(false, true, title, ''));
-}
-
-export function selectCepMarkdownFiles(): string[] {
-  const result = window.cep?.fs?.showOpenDialog(true, false, '\u9009\u62e9 Markdown \u4e0a\u4e0b\u6587\uff08\u4ec5 .md\uff09', '', ['md']);
-  return result ? normalizeCepMarkdownSelection(result) : [];
 }
 
 export function getRuntime(): RuntimeBridge {

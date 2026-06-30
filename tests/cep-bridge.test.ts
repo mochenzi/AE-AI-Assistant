@@ -36,18 +36,6 @@ describe('CEP bridge', () => {
     expect(normalizeCepFileSelection({ err: 1 })).toEqual([]);
   });
 
-  test('selects only Markdown files from CEP and normalizes cancellation', async () => {
-    const showOpenDialog = vi.fn()
-      .mockReturnValueOnce({ err: 0, data: ['file:///D:/docs/a.md', 'file:///D:/scripts/b.jsx', 'file:///D:/docs/c.MD'] })
-      .mockReturnValueOnce({ err: 1 });
-    vi.stubGlobal('window', { cep: { fs: { showOpenDialog } } });
-    const { selectCepMarkdownFiles } = await import('../src/cep/bridge');
-
-    expect(selectCepMarkdownFiles()).toEqual(['D:/docs/a.md', 'D:/docs/c.MD']);
-    expect(selectCepMarkdownFiles()).toEqual([]);
-    expect(showOpenDialog).toHaveBeenCalledWith(true, false, expect.stringContaining('Markdown'), '', ['md']);
-  });
-
   test('returns a preview active composition snapshot when CEP is absent', async () => {
     installPreviewWindow();
     const { hostBridge } = await import('../src/cep/bridge');

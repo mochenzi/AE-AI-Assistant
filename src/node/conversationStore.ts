@@ -222,6 +222,19 @@ export class ConversationStore {
     return document;
   }
 
+  async delete(projectKey: string, id: string): Promise<void> {
+    assertPathSegment(projectKey, '????');
+    assertPathSegment(id, '????');
+    const root = await this.safeRoot();
+    await serializeDocumentOperation([this.documentQueueKey(root, projectKey, id)], async () => {
+      const directory = await this.safeProjectDirectory(projectKey, 'existing');
+      if (!directory) return;
+      await unlink(join(directory, `${id}.json`)).catch((error) => {
+        if (!hasCode(error, 'ENOENT')) throw error;
+      });
+    });
+  }
+
   async moveProject(fromKey: string, project: ProjectIdentity): Promise<void> {
     assertPathSegment(fromKey, '项目标识');
     assertPathSegment(project.key, '项目标识');

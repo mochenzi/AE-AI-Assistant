@@ -46,7 +46,6 @@ import {
   getRuntime,
   hostBridge,
   selectCepDirectory,
-  selectCepMarkdownFiles,
   type ProjectContext,
 } from "../cep/bridge";
 import { migrateState } from "../shared/stateMigration";
@@ -76,11 +75,13 @@ import {
 import { reconcileSelectedContextIds } from "./chatComposerState";
 import { ModelPicker } from "./ModelPicker";
 import { ConversationDrawer } from "./ConversationDrawer";
-import { NewConversationDialog } from "./NewConversationDialog";
+import { NewConversationDialog, type MarkdownLibrarySource } from "./NewConversationDialog";
 import {
+  createConversationDocument,
   projectIdentity,
   titleFromPrompt,
   type ConversationDocument,
+  type MarkdownSnapshot,
   type ConversationSummary,
   type ProjectIdentity,
 } from "../shared/conversationWorkspace";
@@ -324,7 +325,7 @@ function ChatPage({
   const [conversationSummaries, setConversationSummaries] = useState<ConversationSummary[]>([]);
   const [activeDocument, setActiveDocument] = useState<ConversationDocument | null>(null);
   const [newDialogOpen, setNewDialogOpen] = useState(false);
-  const [newMarkdownPaths, setNewMarkdownPaths] = useState<string[]>([]);
+  const [newMarkdownIds, setNewMarkdownIds] = useState<string[]>([]);
   const [creatingConversation, setCreatingConversation] = useState(false);
   const [scriptMenuItems, setScriptMenuItems] = useState<ScriptMenuItem[]>([]);
   const [selectedContexts, setSelectedContexts] = useState<string[]>(
@@ -334,6 +335,32 @@ function ChatPage({
     selectedContexts,
     state.contexts,
   );
+  const markdownLibrarySources = useMemo<Array<MarkdownLibrarySource & { content: string; sourcePath: string }>>(() => [
+    ...state.contexts.map((context) => ({
+      id: `context:${context.id}`,
+      name: context.name,
+      kind: "\u4e0a\u4e0b\u6587\u6863\u6848",
+      description: `${context.content.length} \u5b57`,
+      sourcePath: `context:${context.id}`,
+      content: context.content,
+    })),
+    ...state.templates.map((template) => ({
+      id: `template:${template.id}`,
+      name: template.title,
+      kind: "MD \u89c4\u5219",
+      description: template.category || template.target,
+      sourcePath: `template:${template.id}`,
+      content: template.body,
+    })),
+  ], [state.contexts, state.templates]);
+
+  function buildMarkdownSnapshots(ids = newMarkdownIds): MarkdownSnapshot[] {
+    return ids.flatMap((id) => {
+      const source = markdownLibrarySources.find((item) => item.id === id);
+      return source ? [{ name: `${source.name}.md`, sourcePath: source.sourcePath, content: source.content }] : [];
+    });
+  }
+
   const resolvedChatSelection = resolveSelection(state, "chat");
   const chatSelection = state.activeSelections.chat ?? {
     profileId: resolvedChatSelection.profileId,
@@ -516,14 +543,14 @@ function ChatPage({
     }
   }
 
-  async function createConversation(markdownPaths = newMarkdownPaths): Promise<ConversationDocument | null> {
+  async function createConversation(markdownSnapshots = buildMarkdownSnapshots()): Promise<ConversationDocument | null> {
     const directory = await ensureConversationDirectory();
     if (!directory) return null;
     setCreatingConversation(true);
     try {
       const id = uid();
       const at = now();
-      const document = await runtime.createConversation(directory, projectId, markdownPaths, id, at);
+      const document = createConversationDocument(id, projectId, markdownSnapshots, at);
       const hydrated: ConversationDocument = {
         ...document,
         chatMode: state.chatMode,
@@ -536,7 +563,7 @@ function ChatPage({
       setActiveDocument(hydrated);
       update((current) => ({ ...current, activeConversationId: hydrated.id }));
       setNewDialogOpen(false);
-      setNewMarkdownPaths([]);
+      setNewMarkdownIds([]);
       const summaries = await runtime.listConversations(directory, projectId.key);
       setConversationSummaries(summaries);
       return hydrated;
@@ -571,6 +598,30 @@ function ChatPage({
       const document = await runtime.renameConversation(conversationDirectory, projectId.key, id, title);
       if (activeDocument?.id === id) setActiveDocument(document);
       await refreshConversations();
+    } catch (error) {
+      setNotice((error as Error).message);
+    }
+  }
+
+  async function deleteConversation(id: string) {
+    const item = conversationSummaries.find((conversation) => conversation.id === id);
+    const title = item?.title || "\u8fd9\u4e2a\u4f1a\u8bdd";
+    if (!window.confirm(`\u786e\u5b9a\u5220\u9664\u300c${title}\u300d\u5417\uff1f\n\u53ea\u4f1a\u5220\u9664\u63d2\u4ef6\u5185\u7684\u5bf9\u8bdd\u8bb0\u5f55\uff0c\u4e0d\u4f1a\u5220\u9664 AE \u5de5\u7a0b\u6216\u7d20\u6750\u3002`)) return;
+    try {
+      await runtime.deleteConversation(conversationDirectory, projectId.key, id);
+      const nextSummaries = (await runtime.listConversations(conversationDirectory, projectId.key))
+        .filter((conversation) => conversation.title.toLocaleLowerCase().includes(conversationSearch.trim().toLocaleLowerCase()));
+      setConversationSummaries(nextSummaries);
+      if (activeDocument?.id === id) {
+        const next = nextSummaries[0];
+        if (next) {
+          await selectConversation(next.id);
+        } else {
+          setActiveDocument(null);
+          update((current) => ({ ...current, activeConversationId: "" }));
+        }
+      }
+      setNotice("\u5df2\u5220\u9664\u5bf9\u8bdd\u8bb0\u5f55");
     } catch (error) {
       setNotice((error as Error).message);
     }
@@ -901,6 +952,7 @@ function ChatPage({
           onSearch={setConversationSearch}
           onSelect={selectConversation}
           onRename={renameConversation}
+          onDelete={deleteConversation}
         />
         <div className="conversation-frame clean-chat">
         <div className="conversation">
@@ -1180,22 +1232,16 @@ function ChatPage({
       </div>
       <NewConversationDialog
         open={newDialogOpen}
-        selectedMarkdownPaths={newMarkdownPaths}
+        markdownSources={markdownLibrarySources}
+        selectedMarkdownIds={newMarkdownIds}
         reading={creatingConversation}
-        onPickMarkdown={() => {
-          const paths = selectCepMarkdownFiles();
-          if (paths.length) {
-            setNewMarkdownPaths(paths);
-          } else if (!hostBridge.isCep()) {
-            setNewMarkdownPaths(["preview.md"]);
-          } else {
-            setNotice("\u8bf7\u9009\u62e9 .md Markdown \u6587\u4ef6\uff0c\u4e0d\u8981\u9009\u62e9 .jsx/.jsxbin \u811a\u672c\u6587\u4ef6\u3002\u811a\u672c\u8def\u5f84\u5199\u5728 MD \u91cc\u9762\u3002");
-          }
+        onToggleMarkdown={(id) => {
+          setNewMarkdownIds((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id]);
         }}
-        onClearMarkdown={() => setNewMarkdownPaths([])}
+        onClearMarkdown={() => setNewMarkdownIds([])}
         onCancel={() => {
           setNewDialogOpen(false);
-          setNewMarkdownPaths([]);
+          setNewMarkdownIds([]);
         }}
         onCreate={async () => {
           await createConversation();

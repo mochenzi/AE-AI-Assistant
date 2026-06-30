@@ -93,6 +93,7 @@ class CepRuntime {
   async listConversations(directory: string, projectKey?: string): Promise<ConversationSummary[]> { return new ConversationStore(directory).list(projectKey); }
   async searchConversations(directory: string, query: string): Promise<ConversationSummary[]> { return new ConversationStore(directory).search(query); }
   async renameConversation(directory: string, projectKey: string, id: string, title: string): Promise<ConversationDocument> { return new ConversationStore(directory).rename(projectKey, id, title); }
+  async deleteConversation(directory: string, projectKey: string, id: string): Promise<void> { return new ConversationStore(directory).delete(projectKey, id); }
   async moveConversationProject(directory: string, fromKey: string, project: ProjectIdentity): Promise<void> { return new ConversationStore(directory).moveProject(fromKey, project); }
   async loadScriptMenu(markdownPath: string): Promise<ScriptMenuItem[]> {
     return parseScriptMenuMarkdown(await readFile(markdownPath, 'utf8'));

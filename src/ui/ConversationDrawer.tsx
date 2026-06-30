@@ -1,4 +1,4 @@
-import { Edit3, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, Search } from "lucide-react";
+import { Edit3, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { ConversationSummary, ProjectIdentity } from "../shared/conversationWorkspace";
 
@@ -13,6 +13,7 @@ interface ConversationDrawerProps {
   onSearch(value: string): void;
   onSelect(id: string): void;
   onRename(id: string, title: string): void;
+  onDelete(id: string): void;
 }
 
 export function ConversationDrawer({
@@ -26,6 +27,7 @@ export function ConversationDrawer({
   onSearch,
   onSelect,
   onRename,
+  onDelete,
 }: ConversationDrawerProps) {
   const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null);
 
@@ -34,7 +36,7 @@ export function ConversationDrawer({
       <button
         type="button"
         className="drawer-toggle"
-        aria-label={open ? "收起会话列表" : "展开会话列表"}
+        aria-label={open ? "\u6536\u8d77\u4f1a\u8bdd\u5217\u8868" : "\u5c55\u5f00\u4f1a\u8bdd\u5217\u8868"}
         onClick={onToggle}
       >
         {open ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
@@ -42,16 +44,16 @@ export function ConversationDrawer({
       {open && (
         <>
           <div className="drawer-project">
-            <small>当前工程</small>
+            <small>{"\u5f53\u524d\u5de5\u7a0b"}</small>
             <b>{project.label}</b>
           </div>
           <button type="button" className="new-conversation-button" onClick={onNew}>
-            <Plus size={15} /> 新对话
+            <Plus size={15} /> {"\u65b0\u5bf9\u8bdd"}
           </button>
           <label className="conversation-search">
             <Search size={13} />
             <input
-              placeholder="搜索会话"
+              placeholder="\u641c\u7d22\u4f1a\u8bdd"
               value={search}
               onChange={(event) => onSearch(event.target.value)}
             />
@@ -76,29 +78,38 @@ export function ConversationDrawer({
                 <button
                   type="button"
                   className="conversation-rename-button"
-                  title="重命名会话"
-                  aria-label="重命名会话"
+                  title="\u91cd\u547d\u540d\u4f1a\u8bdd"
+                  aria-label="\u91cd\u547d\u540d\u4f1a\u8bdd"
                   onClick={() => setRenaming({ id: item.id, title: item.title })}
                 >
                   <Edit3 size={12} />
                 </button>
+                <button
+                  type="button"
+                  className="conversation-delete-button"
+                  title="\u5220\u9664\u4f1a\u8bdd"
+                  aria-label="\u5220\u9664\u4f1a\u8bdd"
+                  onClick={() => onDelete(item.id)}
+                >
+                  <Trash2 size={12} />
+                </button>
               </div>
             ))}
-            {!conversations.length && <p className="muted">还没有会话</p>}
+            {!conversations.length && <p className="muted">{"\u8fd8\u6ca1\u6709\u4f1a\u8bdd"}</p>}
           </div>
           {renaming && (
-            <div className="drawer-rename" role="dialog" aria-label="重命名会话">
+            <div className="drawer-rename" role="dialog" aria-label="\u91cd\u547d\u540d\u4f1a\u8bdd">
               <label>
-                会话标题
+                {"\u4f1a\u8bdd\u6807\u9898"}
                 <input
-                  aria-label="会话标题"
+                  aria-label="\u4f1a\u8bdd\u6807\u9898"
                   value={renaming.title}
                   onChange={(event) => setRenaming({ ...renaming, title: event.target.value })}
                 />
               </label>
               <div>
                 <button type="button" onClick={() => setRenaming(null)}>
-                  取消
+                  {"\u53d6\u6d88"}
                 </button>
                 <button
                   type="button"
@@ -108,7 +119,7 @@ export function ConversationDrawer({
                     setRenaming(null);
                   }}
                 >
-                  保存标题
+                  {"\u4fdd\u5b58\u6807\u9898"}
                 </button>
               </div>
             </div>
