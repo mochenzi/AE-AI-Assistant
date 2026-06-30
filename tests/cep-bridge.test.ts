@@ -36,25 +36,16 @@ describe('CEP bridge', () => {
     expect(normalizeCepFileSelection({ err: 1 })).toEqual([]);
   });
 
-  test('selects multiple Markdown files from CEP and normalizes cancellation', async () => {
+  test('selects only Markdown files from CEP and normalizes cancellation', async () => {
     const showOpenDialog = vi.fn()
-      .mockReturnValueOnce({ err: 0, data: ['file:///D:/docs/a.md', 'file:///D:/docs/b.md'] })
+      .mockReturnValueOnce({ err: 0, data: ['file:///D:/docs/a.md', 'file:///D:/scripts/b.jsx', 'file:///D:/docs/c.MD'] })
       .mockReturnValueOnce({ err: 1 });
     vi.stubGlobal('window', { cep: { fs: { showOpenDialog } } });
     const { selectCepMarkdownFiles } = await import('../src/cep/bridge');
 
-    expect(selectCepMarkdownFiles()).toEqual(['D:/docs/a.md', 'D:/docs/b.md']);
+    expect(selectCepMarkdownFiles()).toEqual(['D:/docs/a.md', 'D:/docs/c.MD']);
     expect(selectCepMarkdownFiles()).toEqual([]);
-    expect(showOpenDialog).toHaveBeenCalledWith(true, false, expect.any(String), '', ['md']);
-  });
-
-  test('selects a single script menu Markdown file', async () => {
-    const showOpenDialog = vi.fn().mockReturnValue({ err: 0, data: ['file:///D:/menus/scripts.md'] });
-    vi.stubGlobal('window', { cep: { fs: { showOpenDialog } } });
-    const { selectCepScriptMenuMarkdown } = await import('../src/cep/bridge');
-
-    expect(selectCepScriptMenuMarkdown()).toBe('D:/menus/scripts.md');
-    expect(showOpenDialog).toHaveBeenCalledWith(false, false, expect.any(String), '', ['md']);
+    expect(showOpenDialog).toHaveBeenCalledWith(true, false, expect.stringContaining('Markdown'), '', ['md']);
   });
 
   test('returns a preview active composition snapshot when CEP is absent', async () => {

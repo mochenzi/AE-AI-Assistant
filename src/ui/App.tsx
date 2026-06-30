@@ -609,17 +609,25 @@ function ChatPage({
   async function loadScriptMenu() {
     const active = activeDocument ?? await createConversation([]);
     if (!active) return;
+    const items = active.markdownSnapshots.length
+      ? parseScriptMenuSnapshots(active.markdownSnapshots)
+      : [];
+    const prompt = formatScriptMenuPrompt(items);
+    const lastMessage = active.messages[active.messages.length - 1];
+
+    setScriptMenuItems(items);
+    setPlusMenuOpen(false);
+
+    if (!lastMessage || lastMessage.role !== "assistant" || lastMessage.content !== prompt) {
+      await addAssistantMessage(prompt);
+    }
+
     if (!active.markdownSnapshots.length) {
-      setPlusMenuOpen(false);
-      setNotice("\u8bf7\u5148\u65b0\u5efa\u5bf9\u8bdd\uff0c\u5e76\u9009\u62e9\u5305\u542b\u811a\u672c\u8def\u5f84\u7684 Markdown");
-      await addAssistantMessage(formatScriptMenuPrompt([]));
+      setNotice("\u5f53\u524d\u5bf9\u8bdd\u8fd8\u6ca1\u6709\u9009\u62e9 Markdown\u3002\u8bf7\u70b9\u201c\u65b0\u5bf9\u8bdd\u201d\u65f6\u9009\u62e9\u5305\u542b .jsx\u3001.jsxbin \u6216 .js \u8def\u5f84\u7684 .md \u6587\u4ef6\u3002");
       return;
     }
-    const items = parseScriptMenuSnapshots(active.markdownSnapshots);
-    setScriptMenuItems(items);
-    await addAssistantMessage(formatScriptMenuPrompt(items));
-    setPlusMenuOpen(false);
-    setNotice(items.length ? "\u5df2\u4ece\u5f53\u524d\u5bf9\u8bdd Markdown \u8bfb\u53d6\u811a\u672c\u83dc\u5355" : "\u5f53\u524d\u5bf9\u8bdd Markdown \u4e2d\u6ca1\u6709\u627e\u5230\u53ef\u542f\u52a8\u811a\u672c");
+
+    setNotice(items.length ? "\u5df2\u4ece\u5f53\u524d\u5bf9\u8bdd Markdown \u8bfb\u53d6\u811a\u672c\u83dc\u5355" : "\u5f53\u524d\u5bf9\u8bdd Markdown \u4e2d\u6ca1\u6709\u627e\u5230 .jsx\u3001.jsxbin \u6216 .js \u811a\u672c\u8def\u5f84");
   }
 
   async function toggleActiveCompositionContext() {
@@ -1176,8 +1184,13 @@ function ChatPage({
         reading={creatingConversation}
         onPickMarkdown={() => {
           const paths = selectCepMarkdownFiles();
-          if (paths.length) setNewMarkdownPaths(paths);
-          else if (!hostBridge.isCep()) setNewMarkdownPaths(["preview.md"]);
+          if (paths.length) {
+            setNewMarkdownPaths(paths);
+          } else if (!hostBridge.isCep()) {
+            setNewMarkdownPaths(["preview.md"]);
+          } else {
+            setNotice("\u8bf7\u9009\u62e9 .md Markdown \u6587\u4ef6\uff0c\u4e0d\u8981\u9009\u62e9 .jsx/.jsxbin \u811a\u672c\u6587\u4ef6\u3002\u811a\u672c\u8def\u5f84\u5199\u5728 MD \u91cc\u9762\u3002");
+          }
         }}
         onClearMarkdown={() => setNewMarkdownPaths([])}
         onCancel={() => {

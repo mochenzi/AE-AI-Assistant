@@ -238,6 +238,10 @@ export function normalizeCepFileSelection(result: { err: number; data?: string[]
   return result.data.filter(Boolean).map(normalizeCepPath);
 }
 
+export function normalizeCepMarkdownSelection(result: { err: number; data?: string[] }): string[] {
+  return normalizeCepFileSelection(result).filter((filePath) => /\.md$/i.test(filePath));
+}
+
 export function selectCepDirectory(title = '选择对话归档文件夹'): string | null {
   const cepFs = window.cep?.fs;
   if (!cepFs) return null;
@@ -245,13 +249,8 @@ export function selectCepDirectory(title = '选择对话归档文件夹'): strin
 }
 
 export function selectCepMarkdownFiles(): string[] {
-  const result = window.cep?.fs?.showOpenDialog(true, false, '选择 Markdown 上下文', '', ['md']);
-  return result ? normalizeCepFileSelection(result) : [];
-}
-
-export function selectCepScriptMenuMarkdown(): string | null {
-  const result = window.cep?.fs?.showOpenDialog(false, false, '选择脚本启动菜单 Markdown', '', ['md']);
-  return result ? normalizeCepFileSelection(result)[0] ?? null : null;
+  const result = window.cep?.fs?.showOpenDialog(true, false, '\u9009\u62e9 Markdown \u4e0a\u4e0b\u6587\uff08\u4ec5 .md\uff09', '', ['md']);
+  return result ? normalizeCepMarkdownSelection(result) : [];
 }
 
 export function getRuntime(): RuntimeBridge {
