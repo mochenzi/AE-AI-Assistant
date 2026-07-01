@@ -15,7 +15,7 @@ with sync_playwright() as p:
     assert page.locator(".chat-layout").get_by_text("tokens", exact=False).count() == 0
     assert page.get_by_role("button", name="更多对话选项", exact=True).is_visible()
     assert page.get_by_role("button", name="选择聊天模型", exact=True).is_visible()
-    for label, expected in [("生成", "生成静帧素材"), ("模板", "把重复描述变成工具"), ("API", "已保存档案"), ("历史", "输入 Tokens")]:
+    for label, expected in [("生成", "生成静帧素材"), ("MD??", "MD ???"), ("API", "已保存档案"), ("历史", "输入 Tokens")]:
         page.get_by_role("button", name=label, exact=True).click()
         assert page.get_by_text(expected, exact=True).is_visible()
 

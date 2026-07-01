@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { homedir } from 'node:os';
 import { AtomicJsonStore } from './atomicStore';
@@ -12,6 +12,23 @@ import type { ConversationDocument, ConversationSummary, ProjectIdentity } from 
 import { redactSecrets } from '../shared/redact';
 import { ConversationStore } from './conversationStore';
 import { parseScriptMenuMarkdown, type ScriptMenuItem } from '../shared/scriptMenu';
+
+
+const scriptFilePattern = /\.(jsxbin|jsx|js)$/i;
+
+async function listScriptFilesRecursive(directory: string): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const fullPath = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await listScriptFilesRecursive(fullPath));
+    } else if (entry.isFile() && scriptFilePattern.test(entry.name)) {
+      files.push(fullPath);
+    }
+  }
+  return files.sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
+}
 
 function safeMarkdownFilename(path: string): string {
   return redactSecrets(basename(path)).replace(/sk-[a-z0-9._-]{6,}/gi, '[REDACTED]');
@@ -97,6 +114,9 @@ class CepRuntime {
   async moveConversationProject(directory: string, fromKey: string, project: ProjectIdentity): Promise<void> { return new ConversationStore(directory).moveProject(fromKey, project); }
   async loadScriptMenu(markdownPath: string): Promise<ScriptMenuItem[]> {
     return parseScriptMenuMarkdown(await readFile(markdownPath, 'utf8'));
+  }
+  async listScriptFiles(directory: string): Promise<string[]> {
+    return listScriptFilesRecursive(directory);
   }
   private async generatedFolder(base: string) { const date = new Date().toISOString().slice(0, 10); const folder = join(base, 'AI Generated', date); await mkdir(folder, { recursive: true }); return folder; }
 }

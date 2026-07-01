@@ -101,13 +101,16 @@ type Tab = "chat" | "media" | "templates" | "api" | "history";
 const tabs: Array<{ id: Tab; label: string; icon: typeof Bot }> = [
   { id: "chat", label: "对话", icon: MessageSquare },
   { id: "media", label: "生成", icon: Sparkles },
-  { id: "templates", label: "模板", icon: Library },
+  { id: "templates", label: "MD规则", icon: Library },
   { id: "api", label: "API", icon: KeyRound },
   { id: "history", label: "历史", icon: History },
 ];
 const uid = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 const now = () => new Date().toISOString();
+const defaultScriptDirectory = "D:\\ae\\Adobe After Effects 2025\\Support Files\\Scripts\\ScriptUI Panels";
+const basename = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+const scriptTitle = (path: string) => basename(path).replace(/\.(jsxbin|jsx|js)$/i, "");
 
 export function App() {
   const runtime = useMemo(() => getRuntime(), []);
@@ -335,7 +338,15 @@ function ChatPage({
     selectedContexts,
     state.contexts,
   );
-  const markdownLibrarySources = useMemo<Array<MarkdownLibrarySource & { content: string; sourcePath: string }>>(() => [
+  const markdownLibrarySources = useMemo<Array<MarkdownLibrarySource & { content?: string; sourcePath: string; scriptDirectory?: string }>>(() => [
+    {
+      id: "script-dir:scriptui-panels",
+      name: "ScriptUI Panels \u811a\u672c\u76ee\u5f55",
+      kind: "MD \u89c4\u5219",
+      description: defaultScriptDirectory,
+      sourcePath: `script-dir:${defaultScriptDirectory}`,
+      scriptDirectory: defaultScriptDirectory,
+    },
     ...state.contexts.map((context) => ({
       id: `context:${context.id}`,
       name: context.name,
@@ -354,11 +365,19 @@ function ChatPage({
     })),
   ], [state.contexts, state.templates]);
 
-  function buildMarkdownSnapshots(ids = newMarkdownIds): MarkdownSnapshot[] {
-    return ids.flatMap((id) => {
+  async function buildMarkdownSnapshots(ids = newMarkdownIds): Promise<MarkdownSnapshot[]> {
+    const snapshots: MarkdownSnapshot[] = [];
+    for (const id of ids) {
       const source = markdownLibrarySources.find((item) => item.id === id);
-      return source ? [{ name: `${source.name}.md`, sourcePath: source.sourcePath, content: source.content }] : [];
-    });
+      if (!source) continue;
+      let content = source.content ?? "";
+      if (source.scriptDirectory) {
+        const files = await runtime.listScriptFiles(source.scriptDirectory);
+        content = files.map((file, index) => `${index + 1}. ${scriptTitle(file)} - ${file}`).join("\n");
+      }
+      snapshots.push({ name: `${source.name}.md`, sourcePath: source.sourcePath, content });
+    }
+    return snapshots;
   }
 
   const resolvedChatSelection = resolveSelection(state, "chat");
@@ -543,13 +562,14 @@ function ChatPage({
     }
   }
 
-  async function createConversation(markdownSnapshots = buildMarkdownSnapshots()): Promise<ConversationDocument | null> {
+  async function createConversation(markdownIds = newMarkdownIds): Promise<ConversationDocument | null> {
     const directory = await ensureConversationDirectory();
     if (!directory) return null;
     setCreatingConversation(true);
     try {
       const id = uid();
       const at = now();
+      const markdownSnapshots = await buildMarkdownSnapshots(markdownIds);
       const document = createConversationDocument(id, projectId, markdownSnapshots, at);
       const hydrated: ConversationDocument = {
         ...document,
@@ -1691,14 +1711,14 @@ function TemplatesPage({
     <section className="page">
       <div className="section-title">
         <div>
-          <p className="eyebrow">PROMPT LIBRARY</p>
-          <h2>把重复描述变成工具</h2>
+          <p className="eyebrow">MD RULE LIBRARY</p>
+          <h2>MD 规则库</h2>
         </div>
         <button
           onClick={() =>
             setEditing({
               id: uid(),
-              title: "新模板",
+              title: "新规则",
               category: "自定义",
               target: "ae",
               body: "",
@@ -1776,7 +1796,7 @@ function TemplatesPage({
                   setEditing(null);
                 }}
               >
-                保存模板
+                保存规则
               </button>
             )}
             <button className="primary" onClick={use}>

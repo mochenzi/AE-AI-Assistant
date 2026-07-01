@@ -44,7 +44,7 @@ export function NewConversationDialog({
           </button>
         </div>
         <p className="muted">
-          {"\u4ece\u63d2\u4ef6\u5185\u5df2\u4fdd\u5b58\u7684\u6a21\u677f\u6216\u4e0a\u4e0b\u6587\u6863\u6848\u91cc\u9009\u62e9\uff0c\u521b\u5efa\u65f6\u4f1a\u590d\u5236\u6210\u4e00\u6b21\u6027 Markdown \u5feb\u7167\uff0c\u4e0d\u4f1a\u5f39\u51fa\u6587\u4ef6\u7a97\u53e3\u3002"}
+          {"\u4ece\u63d2\u4ef6\u5185\u5df2\u4fdd\u5b58\u7684 MD \u89c4\u5219\u6216\u4e0a\u4e0b\u6587\u6863\u6848\u91cc\u9009\u62e9\uff0c\u521b\u5efa\u65f6\u4f1a\u590d\u5236\u6210\u4e00\u6b21\u6027 Markdown \u5feb\u7167\uff0c\u4e0d\u4f1a\u5f39\u51fa\u6587\u4ef6\u7a97\u53e3\u3002"}
         </p>
         <div className="markdown-options">
           <button type="button" className={!selectedMarkdownIds.length ? "active" : ""} onClick={onClearMarkdown}>
@@ -68,7 +68,7 @@ export function NewConversationDialog({
           ))}
           {!markdownSources.length && (
             <p className="muted">
-              {"\u8fd8\u6ca1\u6709\u4fdd\u5b58\u7684\u6a21\u677f\u6216\u4e0a\u4e0b\u6587\u6863\u6848\u3002\u5148\u5230\u201c\u6a21\u677f\u201d\u9875\u70b9\u201c\u65b0\u5efa\u201d\u4fdd\u5b58\u4e00\u4e2a\u3002"}
+              {"\u8fd8\u6ca1\u6709\u4fdd\u5b58\u7684 MD \u89c4\u5219\u6216\u4e0a\u4e0b\u6587\u6863\u6848\u3002\u5148\u5230\u201cMD\u89c4\u5219\u201d\u9875\u70b9\u201c\u65b0\u5efa\u201d\u4fdd\u5b58\u4e00\u4e2a\u3002"}
             </p>
           )}
         </div>

@@ -131,6 +131,7 @@ export interface RuntimeBridge {
   deleteConversation(directory: string, projectKey: string, id: string): Promise<void>;
   moveConversationProject(directory: string, fromKey: string, project: ProjectIdentity): Promise<void>;
   loadScriptMenu(markdownPath: string): Promise<ScriptMenuItem[]>;
+  listScriptFiles(directory: string): Promise<string[]>;
 }
 
 class PreviewRuntime implements RuntimeBridge {
@@ -197,6 +198,9 @@ class PreviewRuntime implements RuntimeBridge {
   }
   async loadScriptMenu(markdownPath: string): Promise<ScriptMenuItem[]> {
     return parseScriptMenuMarkdown(`1. 预览脚本 - ${markdownPath.replace(/\.md$/i, '.jsx')}`);
+  }
+  async listScriptFiles(directory: string): Promise<string[]> {
+    return [`${directory.replace(/\\/g, '/')}/preview-script.jsx`];
   }
   async testProfile() { return { ok: true, modelCount: 2 }; }
   async listModels() { return [{ id: 'preview-model', contextWindow: 128000 }]; }
