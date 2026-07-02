@@ -87,7 +87,6 @@ import {
 } from "../shared/conversationWorkspace";
 import {
   formatScriptMenuPrompt,
-  parseScriptMenuSnapshots,
   resolveScriptMenuChoice,
   type ScriptMenuItem,
 } from "../shared/scriptMenu";
@@ -111,6 +110,11 @@ const now = () => new Date().toISOString();
 const defaultScriptDirectory = "D:\\ae\\Adobe After Effects 2025\\Support Files\\Scripts\\ScriptUI Panels";
 const basename = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 const scriptTitle = (path: string) => basename(path).replace(/\.(jsxbin|jsx|js)$/i, "");
+const scriptMenuItemsFromFiles = (files: string[]): ScriptMenuItem[] => files.map((file, index) => ({
+  index: index + 1,
+  name: scriptTitle(file),
+  path: file,
+}));
 
 export function App() {
   const runtime = useMemo(() => getRuntime(), []);
@@ -680,25 +684,24 @@ function ChatPage({
   async function loadScriptMenu() {
     const active = activeDocument ?? await createConversation([]);
     if (!active) return;
-    const items = active.markdownSnapshots.length
-      ? parseScriptMenuSnapshots(active.markdownSnapshots)
-      : [];
-    const prompt = formatScriptMenuPrompt(items);
-    const lastMessage = active.messages[active.messages.length - 1];
-
-    setScriptMenuItems(items);
     setPlusMenuOpen(false);
+    try {
+      const files = await runtime.listScriptFiles(defaultScriptDirectory);
+      const items = scriptMenuItemsFromFiles(files);
+      const prompt = formatScriptMenuPrompt(items);
+      const lastMessage = active.messages[active.messages.length - 1];
 
-    if (!lastMessage || lastMessage.role !== "assistant" || lastMessage.content !== prompt) {
-      await addAssistantMessage(prompt);
+      setScriptMenuItems(items);
+      if (!lastMessage || lastMessage.role !== "assistant" || lastMessage.content !== prompt) {
+        await addAssistantMessage(prompt);
+      }
+      setNotice(items.length
+        ? `\u5df2\u8bfb\u53d6 ${items.length} \u4e2a\u811a\u672c\uff0c\u8bf7\u5728\u5bf9\u8bdd\u91cc\u8f93\u5165\u6570\u5b57\u542f\u52a8`
+        : "\u811a\u672c\u76ee\u5f55\u4e2d\u6ca1\u6709\u627e\u5230 .jsx\u3001.jsxbin \u6216 .js \u811a\u672c");
+    } catch (error) {
+      setScriptMenuItems([]);
+      setNotice((error as Error).message);
     }
-
-    if (!active.markdownSnapshots.length) {
-      setNotice("\u5f53\u524d\u5bf9\u8bdd\u8fd8\u6ca1\u6709\u9009\u62e9 Markdown\u3002\u8bf7\u70b9\u201c\u65b0\u5bf9\u8bdd\u201d\u65f6\u9009\u62e9\u5305\u542b .jsx\u3001.jsxbin \u6216 .js \u8def\u5f84\u7684 .md \u6587\u4ef6\u3002");
-      return;
-    }
-
-    setNotice(items.length ? "\u5df2\u4ece\u5f53\u524d\u5bf9\u8bdd Markdown \u8bfb\u53d6\u811a\u672c\u83dc\u5355" : "\u5f53\u524d\u5bf9\u8bdd Markdown \u4e2d\u6ca1\u6709\u627e\u5230 .jsx\u3001.jsxbin \u6216 .js \u811a\u672c\u8def\u5f84");
   }
 
   async function toggleActiveCompositionContext() {

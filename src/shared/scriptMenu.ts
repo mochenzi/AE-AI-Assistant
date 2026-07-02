@@ -58,10 +58,9 @@ export function parseScriptMenuSnapshots(snapshots: ScriptMenuMarkdownSnapshot[]
 
 export function formatScriptMenuPrompt(items: ScriptMenuItem[]): string {
   if (!items.length) {
-    return '\u6ca1\u6709\u5728\u5f53\u524d\u5bf9\u8bdd\u9009\u62e9\u7684 Markdown '
-      + '\u4e2d\u627e\u5230\u53ef\u542f\u52a8\u811a\u672c\u3002'
-      + '\u8bf7\u5728\u65b0\u5bf9\u8bdd\u91cc\u9009\u62e9\u5305\u542b .jsx\u3001.jsxbin '
-      + '\u6216 .js \u8def\u5f84\u7684 MD\u3002';
+    return '\u811a\u672c\u76ee\u5f55\u4e2d\u6ca1\u6709\u627e\u5230\u53ef\u542f\u52a8\u811a\u672c\u3002'
+      + '\u8bf7\u786e\u8ba4 ScriptUI Panels \u76ee\u5f55\u4e2d\u6709 .jsx\u3001.jsxbin '
+      + '\u6216 .js \u6587\u4ef6\u3002';
   }
   return '\u68c0\u6d4b\u5230\u4ee5\u4e0b\u811a\u672c\uff1a\n'
     + items.map((item) => `${item.index}. ${item.name}`).join('\n')
