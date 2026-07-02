@@ -25,6 +25,15 @@ describe('assistant response parser', () => {
     if (result.kind === 'ae_action') expect(result.plan.summary).toBe('读取当前工程');
   });
 
+  test('accepts a direct ae-actions/v1 plan in AE mode', () => {
+    const result = parseAssistantResponse(JSON.stringify(validPlan), {
+      allowAeActions: true,
+      currentMode: 'ae',
+    });
+    expect(result.kind).toBe('ae_action');
+    if (result.kind === 'ae_action') expect(result.plan.summary).toBe(validPlan.summary);
+  });
+
   test('treats ordinary model text as a safe chat fallback', () => {
     expect(parseAssistantResponse('请告诉我需要修改哪个图层。'))
       .toEqual({ kind: 'chat', visibleText: '请告诉我需要修改哪个图层。' });
@@ -34,7 +43,8 @@ describe('assistant response parser', () => {
     const raw = JSON.stringify({ kind: 'ae_action', plan: { ...validPlan, version: 'ae-actions/v2' } });
     const result = parseAssistantResponse(raw, { allowAeActions: true });
     expect(result.kind).toBe('chat');
-    expect(result.visibleText).toBe('AI 返回的 AE 动作计划无效，未生成可执行操作。');
+    expect(result.visibleText).toContain('AE');
+    expect(result.visibleText).toContain('version');
   });
 
   test('does not display an unknown JSON envelope', () => {
